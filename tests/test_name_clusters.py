@@ -83,28 +83,34 @@ def fake_client(monkeypatch):
 
 
 class TestFallbackNames:
-    def test_頻出語を3つつなぐ(self):
+    def test_joins_three_top_words(self):
+        """頻出語を3つつなぐ。"""
         assert fallback_names({0: ["猫", "犬", "鳥", "馬"]}) == {0: "猫・犬・鳥"}
 
-    def test_語が3つ未満でも作れる(self):
+    def test_handles_fewer_than_three_words(self):
+        """語が3つ未満でも作れる。"""
         assert fallback_names({0: ["猫"]}) == {0: "猫"}
 
-    def test_語が無ければクラスタIDを使う(self):
+    def test_falls_back_to_cluster_id(self):
+        """語が無ければクラスタIDを使う。"""
         assert fallback_names({3: []}) == {3: "クラスタ3"}
 
 
 class TestBuildPrompt:
-    def test_クラスタごとの見出しが入る(self, df, representatives, top_words):
+    def test_includes_heading_per_cluster(self, df, representatives, top_words):
+        """クラスタごとの見出しが入る。"""
         prompt = build_prompt(df, representatives, top_words)
         assert "## グループ 0（全2冊）" in prompt
         assert "## グループ 1（全1冊）" in prompt
 
-    def test_頻出語とタイトルが入る(self, df, representatives, top_words):
+    def test_includes_top_words_and_titles(self, df, representatives, top_words):
+        """頻出語とタイトルが入る。"""
         prompt = build_prompt(df, representatives, top_words)
         assert "頻出語: 猫, 犬, 動物" in prompt
         assert "『本A』" in prompt
 
-    def test_渡す本はBOOKS_PER_CLUSTERまで(self, top_words):
+    def test_limits_books_per_cluster(self):
+        """渡す本は BOOKS_PER_CLUSTER まで。"""
         df = pd.DataFrame(
             {
                 "クラスタID": [0] * 20,
@@ -115,7 +121,8 @@ class TestBuildPrompt:
         prompt = build_prompt(df, {0: list(range(20))}, {0: ["語"]})
         assert prompt.count("- 『") == BOOKS_PER_CLUSTER
 
-    def test_説明文は先頭だけ渡す(self, top_words):
+    def test_truncates_descriptions(self):
+        """説明文は先頭だけ渡す。"""
         long_text = "あ" * (DESCRIPTION_CHARS + 100)
         df = pd.DataFrame({"クラスタID": [0], "タイトル": ["本A"], "説明文": [long_text]})
         prompt = build_prompt(df, {0: [0]}, {0: ["語"]})
@@ -126,7 +133,8 @@ class TestBuildPrompt:
 class TestGenerateClusterNamesFallback:
     """APIが使えない場合、頻出語の名前と by_ai=False を返す。"""
 
-    def test_anthropicが入っていない(self, monkeypatch, df, representatives, top_words):
+    def test_falls_back_when_anthropic_missing(self, monkeypatch, df, representatives, top_words):
+        """anthropic が入っていない。"""
         real_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
@@ -150,20 +158,21 @@ class TestGenerateClusterNamesFallback:
             TypeError("missing authentication credentials"),
         ],
     )
-    def test_APIが失敗したら頻出語に戻す(
-        self, fake_client, df, representatives, top_words, error
-    ):
+    def test_falls_back_on_api_error(self, fake_client, df, representatives, top_words, error):
+        """APIが失敗したら頻出語に戻す。"""
         fake_client.error = error
         names, by_ai = generate_cluster_names(df, representatives, top_words)
         assert by_ai is False
         assert names == fallback_names(top_words)
 
-    def test_認証以外のTypeErrorは投げ直す(self, fake_client, df, representatives, top_words):
+    def test_reraises_unrelated_type_error(self, fake_client, df, representatives, top_words):
+        """認証以外の TypeError は投げ直す。"""
         fake_client.error = TypeError("引数の型が違う")
         with pytest.raises(TypeError, match="引数の型が違う"):
             generate_cluster_names(df, representatives, top_words)
 
-    def test_APIが拒否したら頻出語に戻す(self, fake_client, df, representatives, top_words):
+    def test_falls_back_on_refusal(self, fake_client, df, representatives, top_words):
+        """APIが拒否したら頻出語に戻す。"""
         fake_client.result = FakeResponse([(0, "猫の本")], stop_reason="refusal")
         names, by_ai = generate_cluster_names(df, representatives, top_words)
         assert by_ai is False
@@ -171,39 +180,46 @@ class TestGenerateClusterNamesFallback:
 
 
 class TestGenerateClusterNamesSuccess:
-    def test_返ってきた見出しを使う(self, fake_client, df, representatives, top_words):
+    def test_uses_returned_titles(self, fake_client, df, representatives, top_words):
+        """返ってきた見出しを使う。"""
         fake_client.result = FakeResponse([(0, "動物をめぐる物語"), (1, "宇宙への旅")])
         names, by_ai = generate_cluster_names(df, representatives, top_words)
         assert by_ai is True
         assert names == {0: "動物をめぐる物語", 1: "宇宙への旅"}
 
-    def test_足りない分は頻出語で補う(self, fake_client, df, representatives, top_words):
+    def test_fills_missing_titles_with_fallback(self, fake_client, df, representatives, top_words):
+        """足りない分は頻出語で補う。"""
         fake_client.result = FakeResponse([(0, "動物をめぐる物語")])
         names, _ = generate_cluster_names(df, representatives, top_words)
         assert names[0] == "動物をめぐる物語"
         assert names[1] == fallback_names(top_words)[1]
 
-    def test_存在しないクラスタIDは無視する(self, fake_client, df, representatives, top_words):
+    def test_ignores_unknown_cluster_id(self, fake_client, df, representatives, top_words):
+        """存在しないクラスタIDは無視する。"""
         fake_client.result = FakeResponse([(0, "動物をめぐる物語"), (99, "知らないクラスタ")])
         names, _ = generate_cluster_names(df, representatives, top_words)
         assert set(names) == {0, 1}
 
-    def test_空の見出しは採用しない(self, fake_client, df, representatives, top_words):
+    def test_rejects_blank_title(self, fake_client, df, representatives, top_words):
+        """空の見出しは採用しない。"""
         fake_client.result = FakeResponse([(0, "   ")])
         names, _ = generate_cluster_names(df, representatives, top_words)
         assert names[0] == fallback_names(top_words)[0]
 
-    def test_前後の空白を落とす(self, fake_client, df, representatives, top_words):
+    def test_strips_surrounding_whitespace(self, fake_client, df, representatives, top_words):
+        """前後の空白を落とす。"""
         fake_client.result = FakeResponse([(0, "  動物をめぐる物語  ")])
         names, _ = generate_cluster_names(df, representatives, top_words)
         assert names[0] == "動物をめぐる物語"
 
-    def test_指定したモデルを渡す(self, fake_client, df, representatives, top_words):
+    def test_passes_requested_model(self, fake_client, df, representatives, top_words):
+        """指定したモデルを渡す。"""
         fake_client.result = FakeResponse([(0, "見出し")])
         generate_cluster_names(df, representatives, top_words, model="claude-sonnet-5")
         assert fake_client.calls[0]["model"] == "claude-sonnet-5"
 
-    def test_構造化出力を指定する(self, fake_client, df, representatives, top_words):
+    def test_requests_structured_output(self, fake_client, df, representatives, top_words):
+        """構造化出力を指定する。"""
         fake_client.result = FakeResponse([(0, "見出し")])
         generate_cluster_names(df, representatives, top_words)
         assert fake_client.calls[0]["output_format"] is ClusterTitles
