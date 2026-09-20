@@ -2,14 +2,13 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.cluster import (
     MIN_BOOKS_PER_CLUSTER,
-    cluster_cohesion,
     elbow_k,
     evaluate_k,
     fit_kmeans,
+    silhouette_for_labels,
     suggest_k,
 )
 
@@ -126,26 +125,27 @@ class TestEvaluateK:
         assert list(scores.columns) == ["k", "inertia", "silhouette"]
 
 
-class TestClusterCohesion:
-    def test_identical_vectors_score_one(self):
-        """同一ベクトルのクラスタは1に近い。"""
-        embeddings = np.array([[1.0, 0.0], [1.0, 0.0]])
-        result = cluster_cohesion(embeddings, np.array([0, 0]))
-        assert result.loc[0, "平均コサイン類似度"] == pytest.approx(1.0)
+class TestSilhouetteForLabels:
+    def test_separated_groups_score_high(self):
+        """離れた2群のシルエット係数は高い。"""
+        embeddings = np.array([[1.0, 0.0], [0.99, 0.01], [0.0, 1.0], [0.01, 0.99]])
+        assert silhouette_for_labels(embeddings, np.array([0, 0, 1, 1])) > 0.5
 
-    def test_single_book_cluster_scores_one(self):
-        """1冊だけのクラスタは1。"""
-        result = cluster_cohesion(np.array([[1.0, 0.0]]), np.array([0]))
-        assert result.loc[0, "平均コサイン類似度"] == 1.0
+    def test_mixed_groups_score_low(self):
+        """入り混じった割り当てのシルエット係数は低い。"""
+        embeddings = np.array([[1.0, 0.0], [0.99, 0.01], [0.0, 1.0], [0.01, 0.99]])
+        assert silhouette_for_labels(embeddings, np.array([0, 1, 0, 1])) < 0.0
 
-    def test_counts_books_per_cluster(self):
-        """クラスタごとに冊数を数える。"""
-        embeddings = np.array([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0]])
-        result = cluster_cohesion(embeddings, np.array([0, 0, 1]))
-        assert result["冊数"].tolist() == [2, 1]
-
-    def test_orthogonal_vectors_score_zero(self):
-        """直交するベクトルの類似度は0。"""
+    def test_returns_nan_for_single_cluster(self):
+        """クラスタが1つでは計算できないので nan。"""
         embeddings = np.array([[1.0, 0.0], [0.0, 1.0]])
-        result = cluster_cohesion(embeddings, np.array([0, 0]))
-        assert result.loc[0, "平均コサイン類似度"] == pytest.approx(0.0)
+        assert np.isnan(silhouette_for_labels(embeddings, np.array([0, 0])))
+
+    def test_is_deterministic(self):
+        """同じ入力なら同じ値。"""
+        rng = np.random.default_rng(0)
+        embeddings = rng.random((20, 4))
+        labels = np.array([0] * 10 + [1] * 10)
+        assert silhouette_for_labels(embeddings, labels) == silhouette_for_labels(
+            embeddings, labels
+        )

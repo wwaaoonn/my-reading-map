@@ -9,6 +9,8 @@ CSVに必要な列は「タイトル」と「説明文」の2つだけ。それ�
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 from src import cluster as cluster_mod
 from src import visualize as viz
 from src.embed import MIN_BOOKS, load_or_build_embeddings, load_reading_log, similar_pairs
@@ -97,8 +99,14 @@ def main():
     # 4. クラスタリング
     print(f"\n[4/6] k={k} でクラスタリング")
     df["クラスタID"] = cluster_mod.fit_kmeans(embeddings, k, KMEANS_RANDOM_STATE)
-    cohesion = cluster_mod.cluster_cohesion(embeddings, df["クラスタID"].to_numpy())
-    print(cohesion.to_string(index=False))
+    silhouette = cluster_mod.silhouette_for_labels(
+        embeddings, df["クラスタID"].to_numpy(), KMEANS_RANDOM_STATE
+    )
+    print(f"  シルエット係数（コサイン距離）: {silhouette:.3f}")
+    if silhouette < cluster_mod.LOW_SILHOUETTE:
+        print(
+            f"  ※ {cluster_mod.LOW_SILHOUETTE}未満。このkでは、クラスタは明確に分離していない"
+        )
 
     top_words = top_words_per_cluster(df)
     representatives = viz.representative_books(df, embeddings, top_n=8)
@@ -135,7 +143,8 @@ def main():
         out_dir / "clustered_books_public.csv", index=False, encoding="utf-8-sig"
     )
 
-    summary = cohesion.copy()
+    summary = pd.DataFrame({"クラスタID": sorted(cluster_names)})
+    summary["冊数"] = summary["クラスタID"].map(lambda cid: int((df["クラスタID"] == cid).sum()))
     summary["クラスタ名"] = summary["クラスタID"].map(cluster_names)
     summary["代表本"] = summary["クラスタID"].map(
         lambda cid: df.iloc[representatives[cid][0]]["タイトル"]

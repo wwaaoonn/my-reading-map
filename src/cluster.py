@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
-from sklearn.metrics.pairwise import cosine_similarity
 
 from .plot_style import setup_japanese_font
 
@@ -14,6 +13,9 @@ DEFAULT_K_MAX = 14
 # kの上限を決めるための、1クラスタあたりの平均冊数の下限。
 # 各クラスタの冊数は拘束しないので、割り当て次第でこれを下回るクラスタはできる
 MIN_BOOKS_PER_CLUSTER = 5
+# シルエット係数（コサイン）がどのkでもこの値を下回るとき、分離が弱い旨を表示する。
+# 0.25 は「実質的な構造が見つからない」とされる慣用的な境界
+LOW_SILHOUETTE = 0.25
 
 
 def fit_kmeans(embeddings, k, random_state=0):
@@ -23,7 +25,10 @@ def fit_kmeans(embeddings, k, random_state=0):
 
 
 def evaluate_k(embeddings, k_max=DEFAULT_K_MAX, random_state=0, verbose=True):
-    """k ごとに inertia（エルボー法）とシルエット係数をまとめて計算する。"""
+    """k ごとに inertia（エルボー法）とシルエット係数をまとめて計算する。
+
+    シルエット係数はコサイン距離で測る。inertia はKMeansが返すユークリッド基準の値。
+    """
     k_upper = min(k_max, len(embeddings) - 1)
     rows = []
 
@@ -31,7 +36,8 @@ def evaluate_k(embeddings, k_max=DEFAULT_K_MAX, random_state=0, verbose=True):
         kmeans = KMeans(n_clusters=k, random_state=random_state, n_init="auto")
         labels = kmeans.fit_predict(embeddings)
         score = silhouette_score(
-            embeddings, labels, sample_size=min(500, len(embeddings)), random_state=random_state
+            embeddings, labels, metric="cosine",
+            sample_size=min(500, len(embeddings)), random_state=random_state,
         )
         rows.append({"k": k, "inertia": kmeans.inertia_, "silhouette": score})
         if verbose:
@@ -45,8 +51,9 @@ def elbow_k(scores):
     inertias = scores["inertia"].to_numpy()
     if len(inertias) < 3:
         return int(scores["k"].iloc[0])
-    # 二次差分が最大 = 曲線の曲がりが最も急な点
-    return int(scores["k"].iloc[int(np.argmax(np.abs(np.diff(inertias, n=2)))) + 1])
+    # 二次差分が最大 = 下がり方の鈍化が最も大きい点。
+    # 絶対値を取ると、下がり方が急になる点（エルボーの逆）も選んでしまう
+    return int(scores["k"].iloc[int(np.argmax(np.diff(inertias, n=2))) + 1])
 
 
 def suggest_k(scores, n_books):
@@ -65,9 +72,10 @@ def suggest_k(scores, n_books):
         f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるkの上限: {k_upper}",
         f"→ 採用 k={chosen}",
     ]
-    if scores["silhouette"].max() < 0.1:
+    if scores["silhouette"].max() < LOW_SILHOUETTE:
         reason.append(
-            "※ シルエット係数がどのkでも小さく、クラスタは明確に分離していない。"
+            f"※ シルエット係数がどのkでも{LOW_SILHOUETTE}未満で、"
+            "クラスタは明確に分離していない。"
             "図を見て納得できなければ --k で指定すること"
         )
     return chosen, reason
@@ -104,17 +112,17 @@ def plot_k_selection(scores, out_path, chosen_k=None, dpi=200):
     print(f"k選択グラフを保存しました: {out_path}")
 
 
-def cluster_cohesion(embeddings, labels):
-    """クラスタごとの平均コサイン類似度（まとまりの良さ）を返す。"""
-    rows = []
-    for cluster_id in sorted(set(labels)):
-        vectors = embeddings[np.asarray(labels) == cluster_id]
-        if len(vectors) < 2:
-            avg = 1.0  # 1冊だけのクラスタは自己類似とみなす
-        else:
-            similarity = cosine_similarity(vectors)
-            avg = float(similarity[np.triu_indices(len(similarity), k=1)].mean())
-        rows.append(
-            {"クラスタID": cluster_id, "冊数": len(vectors), "平均コサイン類似度": round(avg, 3)}
+def silhouette_for_labels(embeddings, labels, random_state=0):
+    """割り当て済みのクラスタに対するシルエット係数（コサイン距離）。
+
+    `evaluate_k` はkを変えながら計算するが、こちらは採用した1つの割り当てだけを測る。
+    クラスタが1つしかないときは計算できないので nan を返す。
+    """
+    if len(set(np.asarray(labels).tolist())) < 2:
+        return float("nan")
+    return float(
+        silhouette_score(
+            embeddings, labels, metric="cosine",
+            sample_size=min(500, len(embeddings)), random_state=random_state,
         )
-    return pd.DataFrame(rows)
+    )
