@@ -80,6 +80,9 @@ python -m src.name_clusters
 │   ├── sample_reading_log.csv   パブリックドメイン作品20冊のサンプル
 │   └── README.md                CSVの仕様
 ├── tests/                   pytestのテスト（APIと埋め込みモデルは呼ばない）
+├── requirements.txt         main.py の実行に必要なすべて
+├── requirements-core.txt    埋め込みモデル以外の依存
+├── requirements-dev.txt     テストとlintに必要な依存
 ├── pyproject.toml           ruffとpytestの設定
 └── docs/                    READMEのトップに貼る図
 ```
@@ -87,6 +90,7 @@ python -m src.name_clusters
 ## 開発
 
 テストとlintは、埋め込みモデルのダウンロードもAPI呼び出しもせずに動きます。
+`requirements-dev.txt` には sentence-transformers と torch を含めていません。
 
 ```bash
 pip install -r requirements-dev.txt

@@ -1,4 +1,5 @@
-# テストとlintを動かす場合のみ追加で必要
--r requirements.txt
+# テストとlintを動かす場合のみ必要。
+# テストは埋め込みモデルを呼ばないため、sentence-transformers と torch は入れない
+-r requirements-core.txt
 pytest==8.3.4
 ruff==0.16.8
