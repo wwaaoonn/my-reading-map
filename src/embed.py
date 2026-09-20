@@ -8,6 +8,9 @@ import pandas as pd
 # 読書ログCSVに最低限必要な列
 REQUIRED_COLUMNS = ["タイトル", "説明文"]
 
+# クラスタリングと2次元化に必要な最小の冊数
+MIN_BOOKS = 3
+
 # e5系のモデルは入力にプレフィックスが必要。クラスタリングは対称タスクなので query: を使う
 E5_PREFIX = "query: "
 

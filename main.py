@@ -11,7 +11,7 @@ from pathlib import Path
 
 from src import cluster as cluster_mod
 from src import visualize as viz
-from src.embed import load_or_build_embeddings, load_reading_log, similar_pairs
+from src.embed import MIN_BOOKS, load_or_build_embeddings, load_reading_log, similar_pairs
 from src.label import top_words_per_cluster
 from src.name_clusters import MODEL, generate_cluster_names
 
@@ -79,6 +79,10 @@ def main():
     print(f"[1/6] 読み込み: {args.csv}")
     df = load_reading_log(args.csv)
     print(f"  {len(df)}冊")
+    if len(df) < MIN_BOOKS:
+        raise SystemExit(
+            f"{len(df)}冊では地図を作れません。{MIN_BOOKS}冊以上のCSVを渡してください。"
+        )
 
     # 2. 説明文をベクトル化（キャッシュがあれば再利用）
     print("\n[2/6] 説明文をベクトル化")

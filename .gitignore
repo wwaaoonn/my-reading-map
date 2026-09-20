@@ -1,4 +1,4 @@
-# ローカル専用：自分の読書記録の原本と、公開前の旧構成
+# ローカル専用：自分の読書記録の原本
 # （読書記録はリポジトリに含めない。詳細は data/README.md）
 _local/
 
@@ -12,7 +12,6 @@ outputs/
 # Python
 __pycache__/
 *.py[cod]
-.ipynb_checkpoints/
 .venv/
 venv/
 .env
