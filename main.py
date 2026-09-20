@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument("csv", help="読書ログCSV（「タイトル」「説明文」の列が必要）")
     parser.add_argument(
         "--k", type=int, default=None,
-        help="クラスタ数（2以上・冊数以下）。省略するとエルボー法とシルエット係数から自動で決める",
+        help="クラスタ数（2以上・冊数以下）。省略するとエルボー法と冊数から自動で決める",
     )
     parser.add_argument("--out", default="outputs", help="出力先ディレクトリ（既定: outputs）")
     parser.add_argument(
