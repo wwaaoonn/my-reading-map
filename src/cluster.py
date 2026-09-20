@@ -46,30 +46,57 @@ def evaluate_k(embeddings, k_max=DEFAULT_K_MAX, random_state=0, verbose=True):
     return pd.DataFrame(rows)
 
 
+def _unit_scale(values):
+    """値を0〜1に収める。すべて同じ値なら0を返す。"""
+    span = values.max() - values.min()
+    if span == 0:
+        return np.zeros_like(values)
+    return (values - values.min()) / span
+
+
 def elbow_k(scores):
-    """inertiaの下がり方が最も鈍くなるk（エルボー＝ひじ）を返す。"""
-    inertias = scores["inertia"].to_numpy()
-    if len(inertias) < 3:
-        return int(scores["k"].iloc[0])
-    # 二次差分が最大 = 下がり方の鈍化が最も大きい点。
-    # 絶対値を取ると、下がり方が急になる点（エルボーの逆）も選んでしまう
-    return int(scores["k"].iloc[int(np.argmax(np.diff(inertias, n=2))) + 1])
+    """inertia曲線が最も大きくへこむk（エルボー＝ひじ）を返す。
+
+    両端を結んだ直線からの距離が最大になる点を選ぶ。kとinertiaは単位が違うので、
+    どちらも0〜1に正規化してから距離を測る。
+
+    隣り合う差分ではなく曲線全体の形で決めるため、局所的な凹凸に振られない。
+    へこみが無い（inertiaが直線的に下がる）場合は距離がどこも0になり、
+    最小のkを返す。
+    """
+    ks = scores["k"].to_numpy(dtype=float)
+    inertias = scores["inertia"].to_numpy(dtype=float)
+    if len(ks) < 3:
+        return int(ks[0])
+
+    x = _unit_scale(ks)
+    y = _unit_scale(inertias)
+    # 両端 (x[0], y[0]) と (x[-1], y[-1]) を結ぶ直線からの距離。
+    # 全ての点で共通の分母は、大小の比較には要らないので省く
+    distance = np.abs((y[-1] - y[0]) * x - (x[-1] - x[0]) * y + x[-1] * y[0] - y[-1] * x[0])
+    return int(ks[int(np.argmax(distance))])
 
 
 def suggest_k(scores, n_books):
     """指標からkを1つ選び、判断に使った値を文章で返す。
 
-    エルボー法の値を軸に、冊数から決まる上限で頭を押さえる。
+    エルボー法の値を軸に、2つの上限のうち小さいほうで頭を押さえる。
+    上限は「1クラスタ平均 MIN_BOOKS_PER_CLUSTER 冊以上になるk」と
+    「探索したkの最大（DEFAULT_K_MAX と冊数で決まる）」の2つ。下限は2。
     """
     elbow = elbow_k(scores)
     best_silhouette = int(scores.loc[scores["silhouette"].idxmax(), "k"])
-    k_upper = max(2, min(int(scores["k"].max()), n_books // MIN_BOOKS_PER_CLUSTER))
+    searched_upper = int(scores["k"].max())
+    average_upper = n_books // MIN_BOOKS_PER_CLUSTER
+    k_upper = max(2, min(searched_upper, average_upper))
     chosen = max(2, min(elbow, k_upper))
 
     reason = [
         f"エルボー法が示すk: {elbow}",
         f"シルエット係数が最大のk: {best_silhouette}（値={scores['silhouette'].max():.3f}）",
-        f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるkの上限: {k_upper}",
+        f"kの上限: {k_upper}"
+        f"（1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるk={average_upper} と"
+        f" 探索したkの最大={searched_upper} の小さいほう。下限は2）",
         f"→ 採用 k={chosen}",
     ]
     if scores["silhouette"].max() < LOW_SILHOUETTE:

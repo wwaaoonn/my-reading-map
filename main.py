@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument("csv", help="読書ログCSV（「タイトル」「説明文」の列が必要）")
     parser.add_argument(
         "--k", type=int, default=None,
-        help="クラスタ数。省略するとエルボー法とシルエット係数から自動で決める",
+        help="クラスタ数（2以上・冊数以下）。省略するとエルボー法とシルエット係数から自動で決める",
     )
     parser.add_argument("--out", default="outputs", help="出力先ディレクトリ（既定: outputs）")
     parser.add_argument(
@@ -57,6 +57,11 @@ def parse_args():
 def decide_k(embeddings, out_dir, requested_k):
     """使うクラスタ数を決める。指定があればそれに従う。"""
     if requested_k is not None:
+        if not 2 <= requested_k <= len(embeddings):
+            raise SystemExit(
+                f"--k は2以上、冊数以下で指定してください"
+                f"（指定された k={requested_k} / 冊数={len(embeddings)}）"
+            )
         print(f"\n[3/6] クラスタ数: 指定された k={requested_k} を使います")
         return requested_k
 

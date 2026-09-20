@@ -39,6 +39,21 @@ class TestElbowK:
         result = elbow_k(scores_df([100.0, 80.0, 60.0, 40.0]))
         assert 2 <= result <= 5
 
+    def test_finds_bend_late_in_the_curve(self):
+        """曲がる位置が後ろでも、そこを返す（小さい k に張り付かない）。"""
+        # k=6 まで一定のペースで下がり、そこから鈍くなる
+        assert elbow_k(scores_df([100.0, 80.0, 60.0, 40.0, 21.0, 20.0, 19.0, 18.0])) == 6
+
+    def test_ignores_local_wiggle(self):
+        """途中の小さな凹凸ではなく、曲線全体の形で決める。"""
+        # 本当の曲がりは k=3。k=6 付近の僅かな段差に引っ張られない
+        assert elbow_k(scores_df([100.0, 40.0, 38.0, 36.0, 33.0, 32.0, 31.0])) == 3
+
+    def test_is_unchanged_by_inertia_scale(self):
+        """inertia を定数倍しても選ぶ k は変わらない。"""
+        inertias = [100.0, 50.0, 45.0, 43.0, 42.0]
+        assert elbow_k(scores_df(inertias)) == elbow_k(scores_df([v * 1000 for v in inertias]))
+
 
 class TestSuggestK:
     def test_uses_elbow_value(self):
@@ -62,6 +77,23 @@ class TestSuggestK:
         n_books = 40
         chosen, _ = suggest_k(scores_df([100.0, 50.0, 45.0, 43.0, 42.0, 41.0, 40.0]), n_books)
         assert n_books // chosen >= MIN_BOOKS_PER_CLUSTER
+
+    def test_caps_by_searched_k_max(self):
+        """冊数から決まる上限より、試した k の範囲が狭ければそちらで止める。"""
+        # 100冊なら 100 // 5 = 20 だが、k は 14 までしか試していない
+        inertias = [100.0 - 6.0 * i for i in range(13)]  # k=2..14 を直線的に下げる
+        scores = scores_df(inertias)
+        assert scores["k"].max() == 14
+        chosen, reasons = suggest_k(scores, n_books=100)
+        assert chosen <= 14
+        assert "探索したkの最大=14" in "\n".join(reasons)
+
+    def test_reasons_show_both_upper_bounds(self):
+        """2つの上限を両方とも表示する。"""
+        _, reasons = suggest_k(scores_df([100.0, 50.0, 45.0]), n_books=100)
+        text = "\n".join(reasons)
+        assert f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるk=20" in text
+        assert "探索したkの最大=4" in text
 
     def test_returns_reasons(self):
         """判断に使った値を文章で返す。"""
