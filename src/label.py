@@ -2,16 +2,16 @@
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-# 除外する語。増やすほど頻出語が読みやすくなる
-JAPANESE_STOPWORDS = [
-    "こと", "これ", "それ", "あれ", "ため", "よう", "もの", "ところ",
-    "そして", "しかし", "また", "ので", "のである", "られる", "れる", "ある", "いる",
-    "ます", "です", "する", "した", "して", "できる", "なる",
-    "の", "に", "を", "が", "と", "て", "で", "は", "も", "へ", "から", "まで", "より",
-]
-
 # 頻出語として残す品詞
 TARGET_PARTS = ("名詞", "動詞", "形容詞")
+
+# 上の品詞のうち、落とす細分類。
+# 非自立は「こと」「もの」「の」、接尾は「さ」「たち」「れる」、代名詞は「それ」「そこ」、
+# 数は「一」「二」が該当する。
+EXCLUDED_SUB_PARTS = ("非自立", "接尾", "代名詞", "数")
+
+# 細分類では落ちない汎用語。増やすほど頻出語が読みやすくなる
+JAPANESE_STOPWORDS = ["する", "ある", "いる", "なる", "できる"]
 
 _tokenizer = None
 
@@ -27,12 +27,15 @@ def _get_tokenizer():
 
 
 def tokenize_japanese(text):
-    """日本語テキストから名詞・動詞・形容詞の原形を取り出す。"""
+    """日本語テキストから名詞・動詞・形容詞の原形を取り出す。
+
+    非自立・接尾・代名詞は落とす。
+    """
     tokens = []
     for token in _get_tokenizer().tokenize(text):
         base = token.base_form
-        part = token.part_of_speech.split(",")[0]
-        if part in TARGET_PARTS and base != "*":
+        part, sub_part = token.part_of_speech.split(",")[:2]
+        if part in TARGET_PARTS and sub_part not in EXCLUDED_SUB_PARTS and base != "*":
             tokens.append(base)
     return tokens
 
