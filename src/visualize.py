@@ -13,9 +13,16 @@ CMAP = plt.get_cmap("tab10")
 # t-SNEの perplexity の上限。実際の値は冊数から決める
 PERPLEXITY_MAX = 30
 # 楕円の大きさ（標準偏差の何倍か）
-ELLIPSE_N_STD = 1.2
+ELLIPSE_N_STD = 1.65
 # 楕円の計算に使う点の割合。重心から遠い点を落とす
 ELLIPSE_CORE_RATIO = 0.85
+# 楕円を描くのはこの冊数以上のクラスタだけ
+ELLIPSE_MIN_POINTS = 3
+# 点を落とすのはこの冊数以上のクラスタだけ
+ELLIPSE_TRIM_MIN_POINTS = 8
+# 共分散を円に近づける度合い。冊数で割るので、小さいクラスタほど強く効く
+ELLIPSE_SHRINK_SCALE = 4.0
+ELLIPSE_SHRINK_MAX = 0.5
 
 
 def auto_perplexity(n_books, maximum=PERPLEXITY_MAX):
@@ -99,33 +106,51 @@ def _hide_ticks(ax):
 
 
 def _core_points(x, y, keep=ELLIPSE_CORE_RATIO):
-    """重心から遠い点を落として残りを返す。"""
+    """重心から遠い点を落として残りを返す。冊数が少ないクラスタはそのまま返す。"""
     points = np.column_stack([x, y])
-    if keep >= 1.0 or len(points) < 5:
+    if keep >= 1.0 or len(points) < ELLIPSE_TRIM_MIN_POINTS:
         return points
     distances = np.linalg.norm(points - points.mean(axis=0), axis=1)
     n_keep = max(3, int(round(len(points) * keep)))
     return points[np.argsort(distances)[:n_keep]]
 
 
+def _shrink_covariance(cov, n_points):
+    """共分散を円に近づける。点が少ないほど強く効かせる。
+
+    数点から計算した共分散はほぼ直線状になることがあり、
+    そのまま描くと細長い帯のような楕円になる。
+    """
+    weight = min(ELLIPSE_SHRINK_MAX, ELLIPSE_SHRINK_SCALE / max(n_points, 1))
+    return (1 - weight) * cov + weight * (np.trace(cov) / 2) * np.eye(2)
+
+
 def _plot_confidence_ellipse(x, y, ax, n_std=ELLIPSE_N_STD, **kwargs):
-    """点の散らばりを楕円で示す。3点未満はスキップする。
+    """点の散らばりを楕円で示す。冊数が少ないクラスタには描かない。
 
     楕円は重心に近い点だけで計算するので、離れた点は楕円の外に出る。
+    半径はクラスタ自身の点の広がりが上限になる。
     """
-    if len(x) < 3:
+    if len(x) < ELLIPSE_MIN_POINTS:
         return
+    points = np.column_stack([x, y])
     core = _core_points(x, y)
-    x, y = core[:, 0], core[:, 1]
-    cov = np.cov(x, y)
+    center = core.mean(axis=0)
+    cov = _shrink_covariance(np.cov(core[:, 0], core[:, 1]), len(points))
+
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     order = eigenvalues.argsort()[::-1]
     eigenvalues, eigenvectors = eigenvalues[order], eigenvectors[:, order]
+    radii = n_std * np.sqrt(np.maximum(eigenvalues, 1e-12))
+
+    # クラスタの点を楕円の軸方向に投影し、その広がりで半径を抑える
+    projected = np.abs((points - center) @ eigenvectors)
+    radii = np.minimum(radii, projected.max(axis=0))
+
     angle = np.degrees(np.arctan2(*eigenvectors[:, 0][::-1]))
-    width, height = 2 * n_std * np.sqrt(eigenvalues)
     ax.add_patch(
         patches.Ellipse(
-            xy=(np.mean(x), np.mean(y)), width=width, height=height, angle=angle, **kwargs
+            xy=tuple(center), width=2 * radii[0], height=2 * radii[1], angle=angle, **kwargs
         )
     )
 
