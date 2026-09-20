@@ -18,6 +18,8 @@ DEFAULT_BASE_URL = "https://api.anthropic.com"
 BOOKS_PER_CLUSTER = 8
 # 説明文は先頭だけ渡す
 DESCRIPTION_CHARS = 300
+# 受け取った見出しを切る長さ
+TITLE_MAX_CHARS = 40
 
 SYSTEM_PROMPT = """\
 あなたは読書傾向を分析して、本のグループに見出しを付ける編集者です。
@@ -53,6 +55,15 @@ def load_env():
     load_dotenv(ENV_FILE, override=False)
 
 
+def one_line(text):
+    """改行と連続する空白を1つの空白にまとめる。
+
+    CSV由来の文字列がプロンプトのブロック構造（行頭の `## グループ N` など）を
+    作らないようにする。
+    """
+    return " ".join(str(text).split())
+
+
 def fallback_names(top_words):
     """APIを使わないときの名前。頻出語を3つつなぐ。"""
     return {
@@ -76,8 +87,9 @@ def build_prompt(df, representatives, top_words):
         lines.append(f"グループの中心に近い本（最大{BOOKS_PER_CLUSTER}冊）:")
         for pos in positions:
             row = df.iloc[pos]
-            description = str(row["説明文"])[:DESCRIPTION_CHARS]
-            lines.append(f"- 『{row['タイトル']}』 {description}")
+            title = one_line(row["タイトル"])
+            description = one_line(row["説明文"])[:DESCRIPTION_CHARS]
+            lines.append(f"- 『{title}』 {description}")
         blocks.append("\n".join(lines))
 
     return (
@@ -150,9 +162,10 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
 
     names = dict(fallback)
     for item in response.parsed_output.titles:
+        title = one_line(item.title)[:TITLE_MAX_CHARS]
         # 存在しないクラスタIDが返ってきても無視する
-        if item.cluster_id in names and item.title.strip():
-            names[item.cluster_id] = item.title.strip()
+        if item.cluster_id in names and title:
+            names[item.cluster_id] = title
 
     missing = [cid for cid in fallback if names[cid] == fallback[cid]]
     if missing:

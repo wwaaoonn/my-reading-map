@@ -25,6 +25,14 @@ ELLIPSE_SHRINK_SCALE = 4.0
 ELLIPSE_SHRINK_MAX = 0.5
 
 
+def plain_text(text):
+    """matplotlibが数式として解釈する `$` を取り除く。
+
+    `$...$` は mathtext として解析され、壊れた数式は savefig で ValueError になる。
+    """
+    return str(text).replace("$", "")
+
+
 def auto_perplexity(n_books, maximum=PERPLEXITY_MAX):
     """冊数に合わせた perplexity。"""
     return max(5, min(maximum, (n_books - 1) // 3))
@@ -151,7 +159,7 @@ def plot_reading_map(df, cluster_names, out_path, dpi=200):
     for i, cluster_id in enumerate(sorted(df["クラスタID"].unique())):
         cluster_df = df[df["クラスタID"] == cluster_id]
         color = CMAP(i % 10)
-        name = cluster_names.get(int(cluster_id), f"クラスタ{cluster_id}")
+        name = plain_text(cluster_names.get(int(cluster_id), f"クラスタ{cluster_id}"))
 
         ax.scatter(
             cluster_df["tsne_x"], cluster_df["tsne_y"],
@@ -204,14 +212,16 @@ def plot_cluster_maps(df, embeddings, cluster_names, out_dir, top_n_titles=5, dp
         texts = [
             plt.text(
                 df.iloc[positions[t]]["tsne_x"], df.iloc[positions[t]]["tsne_y"],
-                df.iloc[positions[t]]["タイトル"], fontsize=16, fontweight="bold",
+                plain_text(df.iloc[positions[t]]["タイトル"]), fontsize=16, fontweight="bold",
                 bbox=dict(facecolor="white", alpha=0.6, edgecolor="none", boxstyle="round,pad=0.3"),
             )
             for t in top
         ]
         adjust_text(texts, arrowprops=dict(arrowstyle="->", color="gray"))
 
-        plt.title(cluster_names.get(int(cluster_id), f"クラスタ{cluster_id}"), fontsize=16)
+        plt.title(
+            plain_text(cluster_names.get(int(cluster_id), f"クラスタ{cluster_id}")), fontsize=16
+        )
         plt.grid(True)
         _hide_ticks(plt.gca())
         plt.tight_layout()

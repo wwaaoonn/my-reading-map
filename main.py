@@ -23,6 +23,29 @@ PUBLIC_EXCLUDE_COLUMNS = ["説明文"]
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 TSNE_RANDOM_STATE = 42
 KMEANS_RANDOM_STATE = 0
+# Excel系の表計算ソフトが数式として解釈する、セル先頭の文字
+CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+
+
+def escape_csv_cell(value):
+    """数式として解釈される文字で始まる文字列なら、`'` を前置する。"""
+    if isinstance(value, str) and value.startswith(CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
+def escape_csv_formulas(df):
+    """文字列の列にエスケープをかけた複製を返す。数値の列は変えない。"""
+    escaped = df.copy()
+    for column in escaped.columns:
+        if escaped[column].dtype == object:
+            escaped[column] = escaped[column].map(escape_csv_cell)
+    return escaped
+
+
+def write_csv(df, path):
+    """CSVに書く。数式として解釈される文字列はエスケープする。"""
+    escape_csv_formulas(df).to_csv(path, index=False, encoding="utf-8-sig")
 
 
 def parse_args():
@@ -67,7 +90,7 @@ def decide_k(embeddings, out_dir, requested_k):
 
     print("\n[3/6] クラスタ数を決めています（kを変えてクラスタリングを試行）")
     scores = cluster_mod.evaluate_k(embeddings, random_state=KMEANS_RANDOM_STATE)
-    scores.to_csv(out_dir / "k_selection.csv", index=False, encoding="utf-8-sig")
+    write_csv(scores, out_dir / "k_selection.csv")
 
     k, reasons = cluster_mod.suggest_k(scores, len(embeddings))
     print()
@@ -142,11 +165,9 @@ def main():
     viz.plot_cluster_maps(df, embeddings, cluster_names, out_dir)
 
     # 結果の保存
-    df.to_csv(out_dir / "clustered_books.csv", index=False, encoding="utf-8-sig")
+    write_csv(df, out_dir / "clustered_books.csv")
     public_columns = [c for c in df.columns if c not in PUBLIC_EXCLUDE_COLUMNS]
-    df[public_columns].to_csv(
-        out_dir / "clustered_books_public.csv", index=False, encoding="utf-8-sig"
-    )
+    write_csv(df[public_columns], out_dir / "clustered_books_public.csv")
 
     summary = pd.DataFrame({"クラスタID": sorted(cluster_names)})
     summary["冊数"] = summary["クラスタID"].map(lambda cid: int((df["クラスタID"] == cid).sum()))
@@ -155,10 +176,10 @@ def main():
         lambda cid: df.iloc[representatives[cid][0]]["タイトル"]
     )
     summary["頻出語"] = summary["クラスタID"].map(lambda cid: " ".join(top_words[cid][:10]))
-    summary.to_csv(out_dir / "cluster_summary.csv", index=False, encoding="utf-8-sig")
+    write_csv(summary, out_dir / "cluster_summary.csv")
 
     pairs = similar_pairs(df, embeddings, threshold=0.5)
-    pairs.to_csv(out_dir / "similar_pairs.csv", index=False, encoding="utf-8-sig")
+    write_csv(pairs, out_dir / "similar_pairs.csv")
 
     print(f"\n完了しました。{out_dir}/ に出力しました（類似ペア {len(pairs)}組）")
 

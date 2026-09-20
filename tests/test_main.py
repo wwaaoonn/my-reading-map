@@ -1,9 +1,10 @@
 """main.py のテスト（クラスタ数の決定まわり）。"""
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from main import decide_k
+from main import decide_k, escape_csv_formulas
 
 
 @pytest.fixture
@@ -46,3 +47,31 @@ class TestDecideKAutomatically:
         decide_k(embeddings, tmp_path, None)
         assert (tmp_path / "k_selection.csv").exists()
         assert (tmp_path / "k_selection.png").exists()
+
+
+class TestEscapeCsvFormulas:
+    def test_escapes_formula_prefixes(self):
+        """数式として解釈される文字で始まる文字列に ' を前置する。"""
+        df = pd.DataFrame({"名": ['=HYPERLINK("http://x")', "+1+1", "-1", "@SUM(A1)"]})
+        assert escape_csv_formulas(df)["名"].tolist() == [
+            '\'=HYPERLINK("http://x")',
+            "'+1+1",
+            "'-1",
+            "'@SUM(A1)",
+        ]
+
+    def test_keeps_normal_strings(self):
+        """普通の文字列は変えない。"""
+        df = pd.DataFrame({"名": ["猫をめぐる物語", ""]})
+        assert escape_csv_formulas(df)["名"].tolist() == ["猫をめぐる物語", ""]
+
+    def test_keeps_numeric_columns(self):
+        """数値の列は変えない（負の数を壊さない）。"""
+        df = pd.DataFrame({"tsne_x": [-1.5, 2.0]})
+        assert escape_csv_formulas(df)["tsne_x"].tolist() == [-1.5, 2.0]
+
+    def test_does_not_modify_input(self):
+        """渡されたDataFrameは変えない。"""
+        df = pd.DataFrame({"名": ["=1"]})
+        escape_csv_formulas(df)
+        assert df["名"].tolist() == ["=1"]
