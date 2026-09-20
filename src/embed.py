@@ -8,6 +8,9 @@ import pandas as pd
 # 読書ログCSVに最低限必要な列
 REQUIRED_COLUMNS = ["タイトル", "説明文"]
 
+# e5系のモデルは入力にプレフィックスが必要。クラスタリングは対称タスクなので query: を使う
+E5_PREFIX = "query: "
+
 
 
 def load_reading_log(path):
@@ -30,14 +33,25 @@ def load_reading_log(path):
     return df
 
 
+def l2_normalize(embeddings):
+    """各ベクトルの長さを1に揃える。既に揃っていれば値は変わらない。"""
+    embeddings = np.asarray(embeddings, dtype=np.float32)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    return embeddings / np.maximum(norms, 1e-12)
+
+
 def build_embeddings(descriptions, model_name):
     """説明文のリストを文ベクトルに変換する。"""
     # 実際に計算するときだけ読み込む
     from sentence_transformers import SentenceTransformer
 
     print(f"モデルを読み込み中: {model_name}")
+    texts = list(descriptions)
+    if "e5" in model_name.lower():
+        texts = [E5_PREFIX + t for t in texts]
+
     model = SentenceTransformer(model_name)
-    return model.encode(list(descriptions), show_progress_bar=True)
+    return model.encode(texts, show_progress_bar=True)
 
 
 def load_or_build_embeddings(df, model_name, cache_path, force=False):
@@ -51,7 +65,7 @@ def load_or_build_embeddings(df, model_name, cache_path, force=False):
         embeddings = np.load(cache_path)
         if embeddings.shape[0] == len(df):
             print(f"埋め込みをキャッシュから読み込みました: {cache_path} {embeddings.shape}")
-            return embeddings
+            return l2_normalize(embeddings)
         print(
             f"キャッシュの件数が合わないので作り直します"
             f"（キャッシュ {embeddings.shape[0]}件 / データ {len(df)}件）"
@@ -63,7 +77,7 @@ def load_or_build_embeddings(df, model_name, cache_path, force=False):
     print(f"埋め込みを保存しました: {cache_path} {embeddings.shape}")
 
     assert embeddings.shape[0] == len(df), "件数が一致しません"
-    return embeddings
+    return l2_normalize(embeddings)
 
 
 def similar_pairs(df, embeddings, threshold=0.5):

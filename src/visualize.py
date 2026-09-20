@@ -30,7 +30,9 @@ def compute_tsne(embeddings, perplexity=None, random_state=42):
         perplexity = auto_perplexity(n_books)
     perplexity = max(2, min(perplexity, n_books - 1))
     print(f"  perplexity={perplexity}")
-    tsne = TSNE(n_components=2, random_state=random_state, perplexity=perplexity)
+    tsne = TSNE(
+        n_components=2, random_state=random_state, perplexity=perplexity, metric="cosine"
+    )
     return tsne.fit_transform(np.asarray(embeddings))
 
 

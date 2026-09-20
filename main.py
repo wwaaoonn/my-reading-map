@@ -44,6 +44,10 @@ def parse_args():
         "--perplexity", type=int, default=None,
         help="t-SNEのperplexity。省略すると冊数から決める",
     )
+    parser.add_argument(
+        "--embed-model", default=EMBEDDING_MODEL,
+        help=f"文埋め込みモデル（既定: {EMBEDDING_MODEL}）",
+    )
     parser.add_argument("--force-embed", action="store_true", help="埋め込みを作り直す")
     return parser.parse_args()
 
@@ -79,7 +83,7 @@ def main():
     # 2. 説明文をベクトル化（キャッシュがあれば再利用）
     print("\n[2/6] 説明文をベクトル化")
     embeddings = load_or_build_embeddings(
-        df, model_name=EMBEDDING_MODEL,
+        df, model_name=args.embed_model,
         cache_path=out_dir / "embeddings.npy", force=args.force_embed,
     )
 
