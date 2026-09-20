@@ -21,7 +21,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 
-このライセンスは、このリポジトリのコード（main.py、src/、experiments/、docs/ 以下の
-スクリプト）に適用されます。
+このライセンスは、このリポジトリのコード（main.py と src/ 以下のスクリプト）に
+適用されます。
 data/sample_reading_log.csv の説明文は、パブリックドメイン作品について
 本リポジトリの著者が書き下ろしたものです。
