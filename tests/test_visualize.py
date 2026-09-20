@@ -9,8 +9,23 @@ from src.visualize import (
     auto_perplexity,
     centroid_similarity,
     cluster_positions,
+    plain_text,
     representative_books,
 )
+
+
+class TestPlainText:
+    def test_removes_dollar_signs(self):
+        """mathtextとして解釈される $ を取り除く。"""
+        assert plain_text(r"$\frac$") == r"\frac"
+
+    def test_keeps_other_characters(self):
+        """それ以外は変えない。"""
+        assert plain_text("猫をめぐる物語") == "猫をめぐる物語"
+
+    def test_accepts_non_string(self):
+        """文字列以外も受け取れる。"""
+        assert plain_text(3) == "3"
 
 
 class TestAutoPerplexity:
