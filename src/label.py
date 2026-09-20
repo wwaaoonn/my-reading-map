@@ -37,25 +37,28 @@ def tokenize_japanese(text):
     return tokens
 
 
-def top_words_per_cluster(df, top_n=15, max_features=100):
+def top_words_per_cluster(df, top_n=15):
     """クラスタごとに説明文をまとめ、TF-IDF上位語を返す。
+
+    クラスタ1つを1文書とし、全クラスタを1つのコーパスとしてTF-IDFを学習する。
+    どのクラスタにも出る語のIDFは1.0、一部のクラスタにしか出ない語はそれより大きい。
 
     戻り値: {クラスタID: [頻出語, ...]}
     """
     cluster_texts = df.groupby("クラスタID")["説明文"].apply(" ".join)
-    result = {}
 
-    for cluster_id, text in cluster_texts.items():
-        vectorizer = TfidfVectorizer(
-            tokenizer=tokenize_japanese,
-            stop_words=JAPANESE_STOPWORDS,
-            max_features=max_features,
-            token_pattern=None,  # tokenizer を渡すときは無効化する（警告回避）
-        )
-        matrix = vectorizer.fit_transform([text])
-        names = vectorizer.get_feature_names_out()
-        scores = matrix.toarray()[0]
+    vectorizer = TfidfVectorizer(
+        tokenizer=tokenize_japanese,
+        stop_words=JAPANESE_STOPWORDS,
+        token_pattern=None,  # tokenizer を渡すときは無効化する（警告回避）
+    )
+    matrix = vectorizer.fit_transform(cluster_texts).toarray()
+    names = vectorizer.get_feature_names_out()
+
+    result = {}
+    for row, cluster_id in enumerate(cluster_texts.index):
+        scores = matrix[row]
         top = scores.argsort()[::-1][:top_n]
-        result[int(cluster_id)] = [names[i] for i in top]
+        result[int(cluster_id)] = [names[i] for i in top if scores[i] > 0]
 
     return result
