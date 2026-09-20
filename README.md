@@ -46,7 +46,7 @@ python -m src.name_clusters
 | `--model` | `claude-opus-5` | 命名に使うモデル |
 | `--perplexity N` | 自動 | t-SNEのperplexity。省略すると冊数から決める |
 | `--embed-model` | MiniLM | 文埋め込みモデルを差し替える |
-| `--force-embed` | | ベクトル化をやり直す（説明文を書き換えたとき） |
+| `--force-embed` | | キャッシュを無視してベクトル化をやり直す |
 
 出力されるもの（`outputs/`）:
 
@@ -59,7 +59,8 @@ python -m src.name_clusters
 | `clustered_books_public.csv` | 上記から説明文を除いたもの（結果を共有するとき用） |
 | `k_selection.png` / `.csv` | クラスタ数の検討に使った指標。`--k` を指定したときは作りません |
 | `similar_pairs.csv` | 説明文の類似度が0.5以上の本のペア |
-| `embeddings.npy` | ベクトルのキャッシュ。冊数が変われば自動で作り直す |
+| `embeddings.npy` | ベクトルのキャッシュ |
+| `embeddings.json` | キャッシュのメタ情報。モデル名・次元数・件数・説明文のハッシュ |
 
 動作環境は Python 3.12.2（macOS）で確認しています。初回実行時に文埋め込みモデル
 （約500MB）のダウンロードが走ります。
@@ -78,8 +79,23 @@ python -m src.name_clusters
 ├── data/
 │   ├── sample_reading_log.csv   パブリックドメイン作品20冊のサンプル
 │   └── README.md                CSVの仕様
+├── tests/                   pytestのテスト（APIと埋め込みモデルは呼ばない）
+├── pyproject.toml           ruffとpytestの設定
 └── docs/                    READMEのトップに貼る図
 ```
+
+## 開発
+
+テストとlintは、埋め込みモデルのダウンロードもAPI呼び出しもせずに動きます。
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check .
+```
+
+push と pull request のたびに、GitHub Actions で同じ2つを実行します
+（[.github/workflows/test.yml](.github/workflows/test.yml)）。
 
 ## 作成フロー
 
@@ -116,9 +132,10 @@ Sentence-BERT（`sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`）
 
 ベクトルは長さ1に正規化します。KMeansの距離もt-SNEの距離もコサイン基準になります。
 
-ベクトルは `outputs/embeddings.npy` にキャッシュして次回は再利用し、冊数が変わった場合は
-作り直します。埋め込みモデルを `--embed-model` で変えたときは `--force-embed` を併用して
-ください（キャッシュの判定は冊数だけを見ます）。
+ベクトルは `outputs/embeddings.npy` にキャッシュして次回は再利用します。再利用するのは、
+冊数・埋め込みモデル・説明文の内容が前回と一致する場合だけです。判定には同じ場所に書き出す
+`embeddings.json`（モデル名・次元数・件数・説明文のSHA-256）を使い、一致しない項目があれば
+その理由を表示して作り直します。
 
 ### 3. クラスタ数kの決定
 
@@ -151,7 +168,8 @@ kは固定していません。実行するたびにデータから計算しま�
 
 `src/label.py`（頻出語）と `src/name_clusters.py`（命名）が担当します。
 
-Janomeで説明文を形態素解析し、名詞・動詞・形容詞の原形だけを取り出します。1クラスタの
+Janomeで説明文を形態素解析し、名詞・動詞・形容詞の原形だけを取り出します。このうち
+非自立・接尾・代名詞・数（「こと」「さ」「それ」「一」など）は落とします。1クラスタの
 説明文をつないだものを1文書とし、全クラスタを1つのコーパスとしてTF-IDFを学習して、
 クラスタごとの上位語を取ります。どのクラスタにも出る語のIDFは1.0になるため、そのクラスタに
 偏って出る語が上位に来ます。
