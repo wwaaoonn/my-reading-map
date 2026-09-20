@@ -58,8 +58,8 @@ class TestSuggestK:
         chosen, _ = suggest_k(scores_df([100.0, 50.0]), n_books=3)
         assert chosen == 2
 
-    def test_keeps_minimum_books_per_cluster(self):
-        """1クラスタあたりの冊数が下限を下回らない。"""
+    def test_keeps_average_books_per_cluster(self):
+        """1クラスタあたりの平均冊数が下限を下回らないkを選ぶ。"""
         n_books = 40
         chosen, _ = suggest_k(scores_df([100.0, 50.0, 45.0, 43.0, 42.0, 41.0, 40.0]), n_books)
         assert n_books // chosen >= MIN_BOOKS_PER_CLUSTER

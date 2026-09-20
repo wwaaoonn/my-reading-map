@@ -11,7 +11,8 @@ from .plot_style import setup_japanese_font
 
 # kを探す上限。冊数が少ないときは自動でさらに小さくなる
 DEFAULT_K_MAX = 14
-# 1クラスタあたり最低これだけの冊数を確保する
+# kの上限を決めるための、1クラスタあたりの平均冊数の下限。
+# 各クラスタの冊数は拘束しないので、割り当て次第でこれを下回るクラスタはできる
 MIN_BOOKS_PER_CLUSTER = 5
 
 
@@ -61,7 +62,7 @@ def suggest_k(scores, n_books):
     reason = [
         f"エルボー法が示すk: {elbow}",
         f"シルエット係数が最大のk: {best_silhouette}（値={scores['silhouette'].max():.3f}）",
-        f"1クラスタ{MIN_BOOKS_PER_CLUSTER}冊以上に収まる上限: {k_upper}",
+        f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるkの上限: {k_upper}",
         f"→ 採用 k={chosen}",
     ]
     if scores["silhouette"].max() < 0.1:
