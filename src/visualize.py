@@ -71,24 +71,6 @@ def representative_books(df, embeddings, top_n=1):
     return result
 
 
-def representative_table(df, embeddings):
-    """各クラスタの代表本を一覧表（DataFrame）で返す。"""
-    import pandas as pd
-
-    rows = []
-    for cluster_id, positions in representative_books(df, embeddings, top_n=1).items():
-        pos = positions[0]
-        sims = centroid_similarity(embeddings, cluster_positions(df, cluster_id))
-        rows.append(
-            {
-                "クラスタID": cluster_id,
-                "代表本タイトル": df.iloc[pos]["タイトル"],
-                "重心との類似度": round(float(sims.max()), 3),
-            }
-        )
-    return pd.DataFrame(rows)
-
-
 def _marker_sizes(sims, base=100, scale=1000):
     """マーカーサイズ。重心に近い本ほど大きく、差は非線形に強調する。"""
     span = sims.max() - sims.min()
@@ -111,7 +93,7 @@ def _core_points(x, y, keep=ELLIPSE_CORE_RATIO):
     if keep >= 1.0 or len(points) < ELLIPSE_TRIM_MIN_POINTS:
         return points
     distances = np.linalg.norm(points - points.mean(axis=0), axis=1)
-    n_keep = max(3, int(round(len(points) * keep)))
+    n_keep = max(3, round(len(points) * keep))
     return points[np.argsort(distances)[:n_keep]]
 
 

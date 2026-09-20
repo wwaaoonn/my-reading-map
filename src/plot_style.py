@@ -1,4 +1,7 @@
-"""matplotlibの日本語フォント設定。matplotlib_fontja を優先し、無ければ japanize_matplotlib を使う。"""
+"""matplotlibの日本語フォント設定。
+
+matplotlib_fontja を優先し、無ければ japanize_matplotlib を使う。
+"""
 
 import warnings
 
@@ -17,6 +20,7 @@ def setup_japanese_font():
     except ImportError:
         warnings.warn(
             "日本語フォントが設定できません。"
-            "`pip install matplotlib-fontja` を実行してください（図の日本語が□になります）。"
+            "`pip install matplotlib-fontja` を実行してください（図の日本語が□になります）。",
+            stacklevel=2,
         )
         return None

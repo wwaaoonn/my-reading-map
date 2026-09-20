@@ -131,7 +131,7 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
         print(f"  {error.message}")
         return fallback, False
     except anthropic.APITimeoutError:
-        print(f"APIへの接続がタイムアウトしたので、頻出語からクラスタ名を作ります")
+        print("APIへの接続がタイムアウトしたので、頻出語からクラスタ名を作ります")
         print(f"  接続先: {client.base_url}")
         return fallback, False
     except anthropic.APIConnectionError as error:

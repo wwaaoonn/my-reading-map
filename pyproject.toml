@@ -1,0 +1,17 @@
+[tool.ruff]
+line-length = 100
+extend-exclude = ["_local", "outputs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "RUF"]
+ignore = [
+    # matplotlib に渡す bbox=dict(...) / arrowprops=dict(...) は辞書リテラルにしない
+    "C408",
+    # メッセージもコメントも日本語で書くため、全角括弧などの検出は使わない
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

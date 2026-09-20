@@ -113,5 +113,7 @@ def cluster_cohesion(embeddings, labels):
         else:
             similarity = cosine_similarity(vectors)
             avg = float(similarity[np.triu_indices(len(similarity), k=1)].mean())
-        rows.append({"クラスタID": cluster_id, "冊数": len(vectors), "平均コサイン類似度": round(avg, 3)})
+        rows.append(
+            {"クラスタID": cluster_id, "冊数": len(vectors), "平均コサイン類似度": round(avg, 3)}
+        )
     return pd.DataFrame(rows)
