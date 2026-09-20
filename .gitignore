@@ -1,0 +1,21 @@
+# ローカル専用：自分の読書記録の原本と、公開前の旧構成
+# （読書記録はリポジトリに含めない。詳細は data/README.md）
+_local/
+
+# 再生成できる出力物
+outputs/
+*.npy
+
+# Claude Code のローカル設定
+.claude/settings.local.json
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.env
+
+# macOS
+.DS_Store

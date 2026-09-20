@@ -1,0 +1,4 @@
+# experiments/dash_app.py を動かす場合のみ追加で必要
+-r requirements.txt
+dash==3.1.0
+plotly==5.20.0
