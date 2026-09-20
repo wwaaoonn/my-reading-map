@@ -10,10 +10,26 @@ from .plot_style import setup_japanese_font
 
 CMAP = plt.get_cmap("tab10")
 
+# t-SNEの perplexity の上限。実際の値は冊数から決める
+PERPLEXITY_MAX = 30
+# 楕円の大きさ（標準偏差の何倍か）
+ELLIPSE_N_STD = 1.2
+# 楕円の計算に使う点の割合。重心から遠い点を落とす
+ELLIPSE_CORE_RATIO = 0.85
 
-def compute_tsne(embeddings, perplexity=5, random_state=42):
-    """埋め込みを2次元に落とす。perplexityは冊数より小さくないと動かない。"""
-    perplexity = min(perplexity, len(embeddings) - 1)
+
+def auto_perplexity(n_books, maximum=PERPLEXITY_MAX):
+    """冊数に合わせた perplexity。"""
+    return max(5, min(maximum, (n_books - 1) // 3))
+
+
+def compute_tsne(embeddings, perplexity=None, random_state=42):
+    """埋め込みを2次元に落とす。perplexity を省略すると冊数から決める。"""
+    n_books = len(embeddings)
+    if perplexity is None:
+        perplexity = auto_perplexity(n_books)
+    perplexity = max(2, min(perplexity, n_books - 1))
+    print(f"  perplexity={perplexity}")
     tsne = TSNE(n_components=2, random_state=random_state, perplexity=perplexity)
     return tsne.fit_transform(np.asarray(embeddings))
 
@@ -80,10 +96,25 @@ def _hide_ticks(ax):
     )
 
 
-def _plot_confidence_ellipse(x, y, ax, n_std=1.5, **kwargs):
-    """点の散らばりを楕円で示す。3点未満はスキップする。"""
+def _core_points(x, y, keep=ELLIPSE_CORE_RATIO):
+    """重心から遠い点を落として残りを返す。"""
+    points = np.column_stack([x, y])
+    if keep >= 1.0 or len(points) < 5:
+        return points
+    distances = np.linalg.norm(points - points.mean(axis=0), axis=1)
+    n_keep = max(3, int(round(len(points) * keep)))
+    return points[np.argsort(distances)[:n_keep]]
+
+
+def _plot_confidence_ellipse(x, y, ax, n_std=ELLIPSE_N_STD, **kwargs):
+    """点の散らばりを楕円で示す。3点未満はスキップする。
+
+    楕円は重心に近い点だけで計算するので、離れた点は楕円の外に出る。
+    """
     if len(x) < 3:
         return
+    core = _core_points(x, y)
+    x, y = core[:, 0], core[:, 1]
     cov = np.cov(x, y)
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     order = eigenvalues.argsort()[::-1]
@@ -119,7 +150,7 @@ def plot_reading_map(df, cluster_names, out_path, dpi=200):
         )
         _plot_confidence_ellipse(
             cluster_df["tsne_x"].values, cluster_df["tsne_y"].values, ax,
-            n_std=1.5, edgecolor=color, facecolor=color, alpha=0.12, linewidth=1.5, zorder=2,
+            edgecolor=color, facecolor=color, alpha=0.12, linewidth=1.5, zorder=2,
         )
 
         texts.append(

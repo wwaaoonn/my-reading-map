@@ -19,8 +19,6 @@ from src.name_clusters import MODEL, generate_cluster_names
 PUBLIC_EXCLUDE_COLUMNS = ["説明文"]
 # 文埋め込みモデル（日本語対応）
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-# t-SNEの設定。perplexityは冊数に合わせて後で丸める
-TSNE_PERPLEXITY = 5
 TSNE_RANDOM_STATE = 42
 KMEANS_RANDOM_STATE = 0
 
@@ -42,6 +40,10 @@ def parse_args():
         help="生成AIによる命名をせず、頻出語からクラスタ名を作る",
     )
     parser.add_argument("--model", default=MODEL, help=f"命名に使うモデル（既定: {MODEL}）")
+    parser.add_argument(
+        "--perplexity", type=int, default=None,
+        help="t-SNEのperplexity。省略すると冊数から決める",
+    )
     parser.add_argument("--force-embed", action="store_true", help="埋め込みを作り直す")
     return parser.parse_args()
 
@@ -112,7 +114,7 @@ def main():
 
     # 6. 2次元化して描画
     print("\n[6/6] t-SNEで2次元化して描画")
-    coords = viz.compute_tsne(embeddings, TSNE_PERPLEXITY, TSNE_RANDOM_STATE)
+    coords = viz.compute_tsne(embeddings, args.perplexity, TSNE_RANDOM_STATE)
     df["tsne_x"], df["tsne_y"] = coords[:, 0], coords[:, 1]
 
     viz.plot_reading_map(df, cluster_names, out_dir / "reading_map.png")
