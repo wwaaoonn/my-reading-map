@@ -15,3 +15,6 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests から src を import できるようにする。
+# これが無いと、素の `pytest` では リポジトリ直下が sys.path に入らない
+pythonpath = ["."]
