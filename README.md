@@ -161,7 +161,7 @@ python -m src.name_clusters
 
 ## ライセンス
 
-コードは MIT License（[LICENSE](LICENSE)）です。
+コードと `data/sample_reading_log.csv` は MIT License（[LICENSE](LICENSE)）です。
 
 `data/sample_reading_log.csv` の説明文は、パブリックドメイン作品について本リポジトリの
 著者が書き下ろしたものです。
