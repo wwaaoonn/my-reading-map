@@ -1,4 +1,6 @@
 [tool.ruff]
+# 対応する下限のPython。3.10で動かない書き方を検出させる
+target-version = "py310"
 line-length = 100
 extend-exclude = ["_local", "outputs"]
 
