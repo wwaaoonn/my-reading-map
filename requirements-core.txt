@@ -1,5 +1,5 @@
 # 埋め込みモデル以外の依存。requirements.txt と requirements-dev.txt が読み込む
-# 動作を確認した環境：Python 3.12.2 / macOS
+# 対応するPythonは3.10〜3.12（ピン留めしたwheelは3.12まで）
 pandas==2.2.1
 numpy==1.26.4
 scikit-learn==1.5.1
