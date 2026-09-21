@@ -1,7 +1,9 @@
 name: test
 
 on:
+  # PRブランチはpull_requestだけで走らせる（pushと二重に実行しない）
   push:
+    branches: [main]
   pull_request:
 
 jobs:
