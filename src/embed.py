@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# 読書ログCSVに最低限必要な列
 REQUIRED_COLUMNS = ["タイトル", "説明文"]
 
 # クラスタリングと2次元化に必要な最小の冊数

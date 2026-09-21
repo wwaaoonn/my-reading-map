@@ -13,7 +13,7 @@ CMAP = plt.get_cmap("tab10")
 # t-SNEの perplexity の上限。実際の値は冊数から決める
 PERPLEXITY_MAX = 30
 # 楕円の大きさ（標準偏差の何倍か）
-ELLIPSE_N_STD = 1.65
+ELLIPSE_SPREAD_SCALE = 1.65
 # 楕円の計算に使う点の割合。重心から遠い点を落とす
 ELLIPSE_CORE_RATIO = 0.85
 # 楕円を描くのはこの冊数以上のクラスタだけ
@@ -117,11 +117,11 @@ def _shrink_covariance(cov, n_points):
     return (1 - weight) * cov + weight * (np.trace(cov) / 2) * np.eye(2)
 
 
-def _plot_confidence_ellipse(x, y, ax, n_std=ELLIPSE_N_STD, **kwargs):
+def _plot_spread_ellipse(x, y, ax, scale=ELLIPSE_SPREAD_SCALE, **kwargs):
     """点の散らばりを楕円で示す。冊数が少ないクラスタには描かない。
 
     楕円は重心に近い点だけで計算するので、離れた点は楕円の外に出る。
-    半径はクラスタ自身の点の広がりが上限になる。
+    長軸はクラスタ自身の点の広がりが上限で、短軸には長軸に対する下限がある。
     """
     if len(x) < ELLIPSE_MIN_POINTS:
         return
@@ -133,7 +133,7 @@ def _plot_confidence_ellipse(x, y, ax, n_std=ELLIPSE_N_STD, **kwargs):
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     order = eigenvalues.argsort()[::-1]
     eigenvalues, eigenvectors = eigenvalues[order], eigenvectors[:, order]
-    radii = n_std * np.sqrt(np.maximum(eigenvalues, 1e-12))
+    radii = scale * np.sqrt(np.maximum(eigenvalues, 1e-12))
 
     # クラスタの点を楕円の軸方向に投影し、その広がりで半径を抑える
     projected = np.abs((points - center) @ eigenvectors)
@@ -169,7 +169,7 @@ def plot_reading_map(df, cluster_names, out_path, dpi=200):
             cluster_df["tsne_x"], cluster_df["tsne_y"],
             label=name, color=color, alpha=0.7, s=60, zorder=3,
         )
-        _plot_confidence_ellipse(
+        _plot_spread_ellipse(
             cluster_df["tsne_x"].values, cluster_df["tsne_y"].values, ax,
             edgecolor=color, facecolor=color, alpha=0.12, linewidth=1.5, zorder=2,
         )
