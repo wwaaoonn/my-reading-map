@@ -130,11 +130,9 @@ def main():
     args = parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    # 同じ出力先に何度実行しても、前回のファイルを上書きしたり残したりしない
     stamp = datetime.now().strftime(RUN_STAMP_FORMAT)
     print(f"出力ファイル名に付ける実行時刻: {stamp}")
 
-    # 1. 読み込み
     print(f"[1/6] 読み込み: {args.csv}")
     df = load_reading_log(args.csv)
     print(f"  {len(df)}冊")
@@ -151,17 +149,14 @@ def main():
             "（説明文がすべて空、またはすべて同じでは地図を作れません）。"
         )
 
-    # 2. 説明文をベクトル化（キャッシュがあれば再利用）
     print("\n[2/6] 説明文をベクトル化")
     embeddings = load_or_build_embeddings(
         df, model_name=args.embed_model,
         cache_path=out_dir / "embeddings.npy", force=args.force_embed,
     )
 
-    # 3. クラスタ数を決める
     k = decide_k(embeddings, out_dir, args.k, stamp)
 
-    # 4. クラスタリング
     print(f"\n[4/6] k={k} でクラスタリング")
     df["クラスタID"] = cluster_mod.fit_kmeans(embeddings, k, KMEANS_RANDOM_STATE)
     silhouette = cluster_mod.silhouette_for_labels(
@@ -182,7 +177,6 @@ def main():
     top_words = top_words_per_cluster(df)
     representatives = viz.representative_books(df, embeddings, top_n=8)
 
-    # 5. クラスタ名を付ける
     print("\n[5/6] クラスタ名を生成")
     if args.no_ai_names:
         from src.name_clusters import fallback_names
@@ -199,7 +193,6 @@ def main():
         print(f"  {cluster_id}: {cluster_names[cluster_id]}（{count}冊 / 中心: {center}）")
         print(f"     頻出語: {', '.join(top_words[cluster_id][:8])}")
 
-    # 6. 2次元化して描画
     print("\n[6/6] t-SNEで2次元化して描画")
     coords = viz.compute_tsne(embeddings, args.perplexity, TSNE_RANDOM_STATE)
     df["tsne_x"], df["tsne_y"] = coords[:, 0], coords[:, 1]

@@ -7,7 +7,7 @@ import pytest
 from src.visualize import (
     ELLIPSE_MIN_AXIS_RATIO,
     PERPLEXITY_MAX,
-    _plot_confidence_ellipse,
+    _plot_spread_ellipse,
     auto_perplexity,
     centroid_similarity,
     cluster_positions,
@@ -143,12 +143,12 @@ class TestPlotClusterMaps:
         ]
 
 
-class TestPlotConfidenceEllipse:
+class TestPlotSpreadEllipse:
     def _ellipses(self, x, y):
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots()
-        _plot_confidence_ellipse(np.array(x), np.array(y), ax)
+        _plot_spread_ellipse(np.array(x), np.array(y), ax)
         ellipses = list(ax.patches)
         plt.close(fig)
         return ellipses
