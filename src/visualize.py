@@ -17,7 +17,9 @@ ELLIPSE_N_STD = 1.65
 # 楕円の計算に使う点の割合。重心から遠い点を落とす
 ELLIPSE_CORE_RATIO = 0.85
 # 楕円を描くのはこの冊数以上のクラスタだけ
-ELLIPSE_MIN_POINTS = 3
+ELLIPSE_MIN_POINTS = 2
+# 短軸／長軸の下限。2冊のクラスタや直線状に並んだクラスタでも、つぶれた楕円にしない
+ELLIPSE_MIN_AXIS_RATIO = 0.35
 # 点を落とすのはこの冊数以上のクラスタだけ
 ELLIPSE_TRIM_MIN_POINTS = 8
 # 共分散を円に近づける度合い。冊数で割るので、小さいクラスタほど強く効く
@@ -136,6 +138,8 @@ def _plot_confidence_ellipse(x, y, ax, n_std=ELLIPSE_N_STD, **kwargs):
     # クラスタの点を楕円の軸方向に投影し、その広がりで半径を抑える
     projected = np.abs((points - center) @ eigenvectors)
     radii = np.minimum(radii, projected.max(axis=0))
+    # 2冊のクラスタは短軸方向の広がりが0になるため、長軸から短軸の下限を決める
+    radii[1] = max(radii[1], radii[0] * ELLIPSE_MIN_AXIS_RATIO)
 
     angle = np.degrees(np.arctan2(*eigenvectors[:, 0][::-1]))
     ax.add_patch(

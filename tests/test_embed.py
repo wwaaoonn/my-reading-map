@@ -8,6 +8,7 @@ import pytest
 
 from src.embed import (
     cache_mismatch,
+    count_distinct_descriptions,
     descriptions_digest,
     l2_normalize,
     load_or_build_embeddings,
@@ -234,3 +235,24 @@ class TestLoadOrBuildEmbeddings:
         """戻り値はL2正規化されている。"""
         result = load_or_build_embeddings(df, self.MODEL, tmp_path / "embeddings.npy")
         assert np.allclose(np.linalg.norm(result, axis=1), 1.0)
+
+
+class TestCountDistinctDescriptions:
+    def _df(self, descriptions):
+        return pd.DataFrame({"説明文": descriptions})
+
+    def test_counts_distinct_texts(self):
+        """内容の異なる説明文の件数を返す。"""
+        assert count_distinct_descriptions(self._df(["猫", "犬", "猫"])) == 2
+
+    def test_ignores_empty_texts(self):
+        """空の説明文は数えない。"""
+        assert count_distinct_descriptions(self._df(["猫", "", "  "])) == 1
+
+    def test_returns_zero_when_all_empty(self):
+        """すべて空なら0。"""
+        assert count_distinct_descriptions(self._df(["", "", ""])) == 0
+
+    def test_ignores_surrounding_spaces(self):
+        """前後の空白の違いは同じ説明文として数える。"""
+        assert count_distinct_descriptions(self._df(["猫", " 猫 ", "猫"])) == 1

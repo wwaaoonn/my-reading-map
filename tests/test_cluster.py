@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.cluster import (
     MIN_BOOKS_PER_CLUSTER,
+    MIN_CLUSTER_BOOKS,
     elbow_k,
     evaluate_k,
     fit_kmeans,
@@ -13,11 +14,21 @@ from src.cluster import (
 )
 
 
-def scores_df(inertias, silhouettes=None, start_k=2):
+def scores_df(inertias, silhouettes=None, start_k=2, min_cluster_sizes=None):
     ks = list(range(start_k, start_k + len(inertias)))
     if silhouettes is None:
         silhouettes = [0.5] * len(inertias)
-    return pd.DataFrame({"k": ks, "inertia": inertias, "silhouette": silhouettes})
+    if min_cluster_sizes is None:
+        # 既定では、どの k も最低冊数を満たしている
+        min_cluster_sizes = [MIN_CLUSTER_BOOKS] * len(inertias)
+    return pd.DataFrame(
+        {
+            "k": ks,
+            "inertia": inertias,
+            "silhouette": silhouettes,
+            "min_cluster_size": min_cluster_sizes,
+        }
+    )
 
 
 class TestElbowK:
@@ -95,6 +106,39 @@ class TestSuggestK:
         assert f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるk=25" in text
         assert "探索したkの最大=4" in text
 
+    def test_lowers_k_until_minimum_cluster_size_is_met(self):
+        """最小クラスタが最低冊数を下回る k は選ばない。"""
+        # エルボーは k=5。k=5 と k=4 は1冊のクラスタを含む
+        scores = scores_df(
+            [100.0, 80.0, 60.0, 40.0, 39.0, 38.0], min_cluster_sizes=[5, 4, 1, 1, 3, 2]
+        )
+        chosen, reasons = suggest_k(scores, n_books=100)
+        assert chosen == 3
+        assert "最低2冊を満たす最大のk: 3" in "\n".join(reasons)
+
+    def test_keeps_k_when_minimum_cluster_size_is_met(self):
+        """最低冊数を満たしていれば k を下げない。"""
+        scores = scores_df([100.0, 50.0, 45.0, 43.0, 42.0], min_cluster_sizes=[9, 8, 7, 6, 5])
+        chosen, reasons = suggest_k(scores, n_books=100)
+        assert chosen == 3
+        assert not any("最低" in line for line in reasons)
+
+    def test_floor_is_two_even_when_minimum_is_unmet(self):
+        """下限の2でも満たせないときは2を採用し、その旨を返す。"""
+        scores = scores_df([100.0, 50.0, 45.0], min_cluster_sizes=[1, 1, 1])
+        chosen, reasons = suggest_k(scores, n_books=100)
+        assert chosen == 2
+        assert any("満たすkが無い" in line for line in reasons)
+
+    def test_uses_given_minimum_cluster_books(self):
+        """最低冊数は引数で変えられる。"""
+        # エルボーは k=5。k=4 と k=5 は最小2冊
+        scores = scores_df(
+            [100.0, 80.0, 60.0, 40.0, 39.0, 38.0], min_cluster_sizes=[9, 3, 2, 2, 1, 1]
+        )
+        assert suggest_k(scores, n_books=100)[0] == 5
+        assert suggest_k(scores, n_books=100, min_cluster_books=3)[0] == 3
+
     def test_returns_reasons(self):
         """判断に使った値を文章で返す。"""
         _, reasons = suggest_k(scores_df([100.0, 50.0, 45.0]), n_books=100)
@@ -154,7 +198,7 @@ class TestEvaluateK:
         """指標の列がそろう。"""
         rng = np.random.default_rng(0)
         scores = evaluate_k(rng.random((10, 3)), k_max=3, verbose=False)
-        assert list(scores.columns) == ["k", "inertia", "silhouette"]
+        assert list(scores.columns) == ["k", "inertia", "silhouette", "min_cluster_size"]
 
 
 class TestSilhouetteForLabels:

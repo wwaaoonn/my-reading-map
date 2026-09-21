@@ -13,6 +13,10 @@ REQUIRED_COLUMNS = ["タイトル", "説明文"]
 # クラスタリングと2次元化に必要な最小の冊数
 MIN_BOOKS = 3
 
+# 2次元化に必要な、内容の異なる説明文の最小件数。
+# すべて同じ説明文（空も含む）だとベクトルが1種類になり、t-SNEがネイティブ側で落ちる
+MIN_DISTINCT_DESCRIPTIONS = 2
+
 # e5系のモデルは入力にプレフィックスが必要。クラスタリングは対称タスクなので query: を使う
 E5_PREFIX = "query: "
 
@@ -36,6 +40,12 @@ def load_reading_log(path):
         print(f"注意：説明文が空の行が {empty} 件あります（ベクトルが意味を持ちません）")
 
     return df
+
+
+def count_distinct_descriptions(df):
+    """空でない説明文の種類数を返す。前後の空白は無視する。"""
+    filled = df["説明文"].str.strip()
+    return int(filled[filled != ""].nunique())
 
 
 def l2_normalize(embeddings):

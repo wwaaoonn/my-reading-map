@@ -15,7 +15,14 @@ import pandas as pd
 
 from src import cluster as cluster_mod
 from src import visualize as viz
-from src.embed import MIN_BOOKS, load_or_build_embeddings, load_reading_log, similar_pairs
+from src.embed import (
+    MIN_BOOKS,
+    MIN_DISTINCT_DESCRIPTIONS,
+    count_distinct_descriptions,
+    load_or_build_embeddings,
+    load_reading_log,
+    similar_pairs,
+)
 from src.label import top_words_per_cluster
 from src.name_clusters import MODEL, generate_cluster_names
 
@@ -134,6 +141,14 @@ def main():
     if len(df) < MIN_BOOKS:
         raise SystemExit(
             f"{len(df)}冊では地図を作れません。{MIN_BOOKS}冊以上のCSVを渡してください。"
+        )
+
+    distinct = count_distinct_descriptions(df)
+    if distinct < MIN_DISTINCT_DESCRIPTIONS:
+        raise SystemExit(
+            f"内容の異なる説明文が{distinct}件しかありません。"
+            f"{MIN_DISTINCT_DESCRIPTIONS}件以上必要です"
+            "（説明文がすべて空、またはすべて同じでは地図を作れません）。"
         )
 
     # 2. 説明文をベクトル化（キャッシュがあれば再利用）

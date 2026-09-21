@@ -5,7 +5,9 @@ import pandas as pd
 import pytest
 
 from src.visualize import (
+    ELLIPSE_MIN_AXIS_RATIO,
     PERPLEXITY_MAX,
+    _plot_confidence_ellipse,
     auto_perplexity,
     centroid_similarity,
     cluster_positions,
@@ -139,3 +141,33 @@ class TestPlotClusterMaps:
             "cluster_0_20260921-104300.png",
             "cluster_1_20260921-104300.png",
         ]
+
+
+class TestPlotConfidenceEllipse:
+    def _ellipses(self, x, y):
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots()
+        _plot_confidence_ellipse(np.array(x), np.array(y), ax)
+        ellipses = list(ax.patches)
+        plt.close(fig)
+        return ellipses
+
+    def test_draws_ellipse_for_two_books(self):
+        """2冊のクラスタにも楕円を描く。"""
+        assert len(self._ellipses([0.0, 1.0], [0.0, 1.0])) == 1
+
+    def test_two_book_ellipse_has_width_and_height(self):
+        """2冊でもつぶれない（短軸が0にならない）。"""
+        ellipse = self._ellipses([0.0, 1.0], [0.0, 1.0])[0]
+        assert ellipse.width > 0
+        assert ellipse.height >= ellipse.width * ELLIPSE_MIN_AXIS_RATIO
+
+    def test_draws_nothing_for_single_book(self):
+        """1冊では描かない。"""
+        assert self._ellipses([0.0], [0.0]) == []
+
+    def test_covers_collinear_books(self):
+        """直線状に並んだクラスタでも短軸を持つ。"""
+        ellipse = self._ellipses([0.0, 1.0, 2.0, 3.0], [0.0, 1.0, 2.0, 3.0])[0]
+        assert ellipse.height > 0
