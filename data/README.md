@@ -35,5 +35,5 @@ python main.py ~/Documents/読書記録.csv
 
 出版社の内容紹介をそのまま説明文に使っている場合、そのCSVを公開リポジトリに
 置くのは避けたほうが安全です。パイプラインは説明文を除いた
-`clustered_books_public.csv` も同時に出力するので、結果を共有したいときは
+`clustered_books_public_<時刻>.csv` も同時に出力するので、結果を共有したいときは
 そちらを使ってください。

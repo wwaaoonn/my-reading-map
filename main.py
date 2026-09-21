@@ -7,6 +7,8 @@ CSVに必要な列は「タイトル」と「説明文」の2つだけ。それ�
 """
 
 import argparse
+import math
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +27,8 @@ TSNE_RANDOM_STATE = 42
 KMEANS_RANDOM_STATE = 0
 # Excel系の表計算ソフトが数式として解釈する、セル先頭の文字
 CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
+# 出力ファイル名に挟む実行時刻。例: reading_map_20260921-104300.png
+RUN_STAMP_FORMAT = "%Y%m%d-%H%M%S"
 
 
 def escape_csv_cell(value):
@@ -48,6 +52,14 @@ def write_csv(df, path):
     escape_csv_formulas(df).to_csv(path, index=False, encoding="utf-8-sig")
 
 
+def stamped(name, stamp):
+    """ファイル名に実行時刻を挟む。stamp が空なら名前を変えない。"""
+    if not stamp:
+        return name
+    path = Path(name)
+    return f"{path.stem}_{stamp}{path.suffix}"
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="読書記録のCSVから読書マップを作る",
@@ -57,7 +69,7 @@ def parse_args():
     parser.add_argument("csv", help="読書ログCSV（「タイトル」「説明文」の列が必要）")
     parser.add_argument(
         "--k", type=int, default=None,
-        help="クラスタ数（2以上・冊数以下）。省略するとエルボー法と冊数から自動で決める",
+        help="クラスタ数（2以上・冊数-1以下）。省略するとエルボー法と冊数から自動で決める",
     )
     parser.add_argument("--out", default="outputs", help="出力先ディレクトリ（既定: outputs）")
     parser.add_argument(
@@ -77,26 +89,33 @@ def parse_args():
     return parser.parse_args()
 
 
-def decide_k(embeddings, out_dir, requested_k):
-    """使うクラスタ数を決める。指定があればそれに従う。"""
+def decide_k(embeddings, out_dir, requested_k, stamp=None):
+    """使うクラスタ数を決める。指定があればそれに従う。
+
+    上限は冊数-1。冊数と同じkにすると全クラスタが1冊になり、
+    シルエット係数（2以上・冊数-1以下でのみ定義される）が計算できない。
+    """
+    max_k = len(embeddings) - 1
     if requested_k is not None:
-        if not 2 <= requested_k <= len(embeddings):
+        if not 2 <= requested_k <= max_k:
             raise SystemExit(
-                f"--k は2以上、冊数以下で指定してください"
-                f"（指定された k={requested_k} / 冊数={len(embeddings)}）"
+                f"--k は2以上、冊数-1以下で指定してください"
+                f"（指定された k={requested_k} / 冊数={len(embeddings)} / 上限={max_k}）"
             )
         print(f"\n[3/6] クラスタ数: 指定された k={requested_k} を使います")
         return requested_k
 
     print("\n[3/6] クラスタ数を決めています（kを変えてクラスタリングを試行）")
     scores = cluster_mod.evaluate_k(embeddings, random_state=KMEANS_RANDOM_STATE)
-    write_csv(scores, out_dir / "k_selection.csv")
+    write_csv(scores, out_dir / stamped("k_selection.csv", stamp))
 
     k, reasons = cluster_mod.suggest_k(scores, len(embeddings))
     print()
     for line in reasons:
         print(f"  {line}")
-    cluster_mod.plot_k_selection(scores, out_dir / "k_selection.png", chosen_k=k)
+    cluster_mod.plot_k_selection(
+        scores, out_dir / stamped("k_selection.png", stamp), chosen_k=k
+    )
     return k
 
 
@@ -104,6 +123,9 @@ def main():
     args = parse_args()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
+    # 同じ出力先に何度実行しても、前回のファイルを上書きしたり残したりしない
+    stamp = datetime.now().strftime(RUN_STAMP_FORMAT)
+    print(f"出力ファイル名に付ける実行時刻: {stamp}")
 
     # 1. 読み込み
     print(f"[1/6] 読み込み: {args.csv}")
@@ -122,7 +144,7 @@ def main():
     )
 
     # 3. クラスタ数を決める
-    k = decide_k(embeddings, out_dir, args.k)
+    k = decide_k(embeddings, out_dir, args.k, stamp)
 
     # 4. クラスタリング
     print(f"\n[4/6] k={k} でクラスタリング")
@@ -130,11 +152,17 @@ def main():
     silhouette = cluster_mod.silhouette_for_labels(
         embeddings, df["クラスタID"].to_numpy(), KMEANS_RANDOM_STATE
     )
-    print(f"  シルエット係数（コサイン距離）: {silhouette:.3f}")
-    if silhouette < cluster_mod.LOW_SILHOUETTE:
+    if math.isnan(silhouette):
         print(
-            f"  ※ {cluster_mod.LOW_SILHOUETTE}未満。このkでは、クラスタは明確に分離していない"
+            "  シルエット係数（コサイン距離）: 計算できません"
+            "（クラスタが1つ、または全クラスタが1冊）"
         )
+    else:
+        print(f"  シルエット係数（コサイン距離）: {silhouette:.3f}")
+        if silhouette < cluster_mod.LOW_SILHOUETTE:
+            print(
+                f"  ※ {cluster_mod.LOW_SILHOUETTE}未満。このkでは、クラスタは明確に分離していない"
+            )
 
     top_words = top_words_per_cluster(df)
     representatives = viz.representative_books(df, embeddings, top_n=8)
@@ -161,13 +189,13 @@ def main():
     coords = viz.compute_tsne(embeddings, args.perplexity, TSNE_RANDOM_STATE)
     df["tsne_x"], df["tsne_y"] = coords[:, 0], coords[:, 1]
 
-    viz.plot_reading_map(df, cluster_names, out_dir / "reading_map.png")
-    viz.plot_cluster_maps(df, embeddings, cluster_names, out_dir)
+    viz.plot_reading_map(df, cluster_names, out_dir / stamped("reading_map.png", stamp))
+    viz.plot_cluster_maps(df, embeddings, cluster_names, out_dir, stamp=stamp)
 
     # 結果の保存
-    write_csv(df, out_dir / "clustered_books.csv")
+    write_csv(df, out_dir / stamped("clustered_books.csv", stamp))
     public_columns = [c for c in df.columns if c not in PUBLIC_EXCLUDE_COLUMNS]
-    write_csv(df[public_columns], out_dir / "clustered_books_public.csv")
+    write_csv(df[public_columns], out_dir / stamped("clustered_books_public.csv", stamp))
 
     summary = pd.DataFrame({"クラスタID": sorted(cluster_names)})
     summary["冊数"] = summary["クラスタID"].map(lambda cid: int((df["クラスタID"] == cid).sum()))
@@ -176,12 +204,12 @@ def main():
         lambda cid: df.iloc[representatives[cid][0]]["タイトル"]
     )
     summary["頻出語"] = summary["クラスタID"].map(lambda cid: " ".join(top_words[cid][:10]))
-    write_csv(summary, out_dir / "cluster_summary.csv")
+    write_csv(summary, out_dir / stamped("cluster_summary.csv", stamp))
 
     pairs = similar_pairs(df, embeddings, threshold=0.5)
-    write_csv(pairs, out_dir / "similar_pairs.csv")
+    write_csv(pairs, out_dir / stamped("similar_pairs.csv", stamp))
 
-    print(f"\n完了しました。{out_dir}/ に出力しました（類似ペア {len(pairs)}組）")
+    print(f"\n完了しました。{out_dir}/ に出力しました（{stamp} / 類似ペア {len(pairs)}組）")
 
 
 if __name__ == "__main__":

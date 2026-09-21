@@ -85,6 +85,11 @@ class TestTopWordsPerCluster:
         # クラスタ0に出ない「宇宙」はTF-IDFが0になる
         assert "宇宙" not in result[0]
 
+    def test_returns_empty_words_when_no_word_is_found(self):
+        """説明文がすべて空でも落ちず、空のリストを返す。"""
+        df = self._df({0: ["", ""], 1: [""]})
+        assert top_words_per_cluster(df) == {0: [], 1: []}
+
     def test_cluster_ids_are_int(self):
         """クラスタIDは int。"""
         df = self._df({0: ["猫が眠る。"], 1: ["宇宙を旅する。"]})

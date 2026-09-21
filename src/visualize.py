@@ -187,8 +187,11 @@ def plot_reading_map(df, cluster_names, out_path, dpi=200):
     print(f"全体マップを保存しました: {out_path}")
 
 
-def plot_cluster_maps(df, embeddings, cluster_names, out_dir, top_n_titles=5, dpi=200):
-    """クラスタ別マップ：1クラスタだけ色を付け、中心的な本のタイトルを表示する。"""
+def plot_cluster_maps(df, embeddings, cluster_names, out_dir, stamp=None, top_n_titles=5, dpi=200):
+    """クラスタ別マップ：1クラスタだけ色を付け、中心的な本のタイトルを表示する。
+
+    stamp を渡すと、ファイル名を `cluster_0_<stamp>.png` にする。
+    """
     setup_japanese_font()
     from adjustText import adjust_text
 
@@ -226,7 +229,8 @@ def plot_cluster_maps(df, embeddings, cluster_names, out_dir, top_n_titles=5, dp
         _hide_ticks(plt.gca())
         plt.tight_layout()
 
-        out_path = f"{out_dir}/cluster_{cluster_id}.png"
+        suffix = f"_{stamp}" if stamp else ""
+        out_path = f"{out_dir}/cluster_{cluster_id}{suffix}.png"
         plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
         plt.close(fig)
         saved.append(out_path)

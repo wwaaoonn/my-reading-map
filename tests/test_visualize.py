@@ -10,6 +10,7 @@ from src.visualize import (
     centroid_similarity,
     cluster_positions,
     plain_text,
+    plot_cluster_maps,
     representative_books,
 )
 
@@ -108,3 +109,33 @@ class TestRepresentativeBooks:
         df = pd.DataFrame({"クラスタID": [1, 0, 1]})
         embeddings = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.0]])
         assert set(representative_books(df, embeddings, top_n=2)[1]) == {0, 2}
+
+
+class TestPlotClusterMaps:
+    def _df(self):
+        return pd.DataFrame(
+            {
+                "タイトル": ["猫", "犬", "宇宙", "銀河"],
+                "クラスタID": [0, 0, 1, 1],
+                "tsne_x": [0.0, 0.1, 5.0, 5.1],
+                "tsne_y": [0.0, 0.1, 5.0, 5.1],
+            }
+        )
+
+    def test_writes_one_file_per_cluster(self, tmp_path):
+        """クラスタごとに1枚ずつ出力する。"""
+        embeddings = np.array([[1.0, 0.0], [1.0, 0.1], [0.0, 1.0], [0.1, 1.0]])
+        plot_cluster_maps(self._df(), embeddings, {0: "猫の話", 1: "宇宙の話"}, tmp_path, dpi=50)
+        assert sorted(f.name for f in tmp_path.iterdir()) == ["cluster_0.png", "cluster_1.png"]
+
+    def test_puts_stamp_in_file_names(self, tmp_path):
+        """stamp を渡すと、ファイル名に実行時刻が入る。"""
+        embeddings = np.array([[1.0, 0.0], [1.0, 0.1], [0.0, 1.0], [0.1, 1.0]])
+        plot_cluster_maps(
+            self._df(), embeddings, {0: "猫の話", 1: "宇宙の話"}, tmp_path,
+            stamp="20260921-104300", dpi=50,
+        )
+        assert sorted(f.name for f in tmp_path.iterdir()) == [
+            "cluster_0_20260921-104300.png",
+            "cluster_1_20260921-104300.png",
+        ]

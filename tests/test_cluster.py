@@ -63,7 +63,7 @@ class TestSuggestK:
 
     def test_caps_by_book_count(self):
         """冊数から決まる上限で頭を押さえる。"""
-        # 10冊なら 10 // 5 = 2 が上限
+        # 10冊なら 10 // 4 = 2 が上限
         chosen, _ = suggest_k(scores_df([100.0, 50.0, 45.0, 43.0, 42.0]), n_books=10)
         assert chosen == 2
 
@@ -80,7 +80,7 @@ class TestSuggestK:
 
     def test_caps_by_searched_k_max(self):
         """冊数から決まる上限より、試した k の範囲が狭ければそちらで止める。"""
-        # 100冊なら 100 // 5 = 20 だが、k は 14 までしか試していない
+        # 100冊なら 100 // 4 = 25 だが、k は 14 までしか試していない
         inertias = [100.0 - 6.0 * i for i in range(13)]  # k=2..14 を直線的に下げる
         scores = scores_df(inertias)
         assert scores["k"].max() == 14
@@ -92,7 +92,7 @@ class TestSuggestK:
         """2つの上限を両方とも表示する。"""
         _, reasons = suggest_k(scores_df([100.0, 50.0, 45.0]), n_books=100)
         text = "\n".join(reasons)
-        assert f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるk=20" in text
+        assert f"1クラスタ平均{MIN_BOOKS_PER_CLUSTER}冊以上になるk=25" in text
         assert "探索したkの最大=4" in text
 
     def test_returns_reasons(self):
@@ -172,6 +172,11 @@ class TestSilhouetteForLabels:
         """クラスタが1つでは計算できないので nan。"""
         embeddings = np.array([[1.0, 0.0], [0.0, 1.0]])
         assert np.isnan(silhouette_for_labels(embeddings, np.array([0, 0])))
+
+    def test_returns_nan_when_every_book_is_its_own_cluster(self):
+        """クラスタ数が冊数と同じでは計算できないので nan。"""
+        embeddings = np.array([[1.0, 0.0], [0.99, 0.01], [0.0, 1.0]])
+        assert np.isnan(silhouette_for_labels(embeddings, np.array([0, 1, 2])))
 
     def test_is_deterministic(self):
         """同じ入力なら同じ値。"""
