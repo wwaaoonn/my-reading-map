@@ -12,7 +12,7 @@ from .plot_style import setup_japanese_font
 DEFAULT_K_MAX = 14
 # kの上限を決めるための、1クラスタあたりの平均冊数の下限。
 # 各クラスタの冊数は拘束しないので、割り当て次第でこれを下回るクラスタはできる
-MIN_BOOKS_PER_CLUSTER = 5
+MIN_BOOKS_PER_CLUSTER = 4
 # シルエット係数（コサイン）がどのkでもこの値を下回るとき、分離が弱い旨を表示する。
 # 0.25 は「実質的な構造が見つからない」とされる慣用的な境界
 LOW_SILHOUETTE = 0.25
@@ -143,9 +143,11 @@ def silhouette_for_labels(embeddings, labels, random_state=0):
     """割り当て済みのクラスタに対するシルエット係数（コサイン距離）。
 
     `evaluate_k` はkを変えながら計算するが、こちらは採用した1つの割り当てだけを測る。
-    クラスタが1つしかないときは計算できないので nan を返す。
+    計算できるのはクラスタ数が2以上、冊数-1以下のときだけで、それ以外は nan を返す。
     """
-    if len(set(np.asarray(labels).tolist())) < 2:
+    labels = np.asarray(labels)
+    n_labels = len(set(labels.tolist()))
+    if n_labels < 2 or n_labels >= len(labels):
         return float("nan")
     return float(
         silhouette_score(

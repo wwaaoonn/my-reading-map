@@ -46,6 +46,8 @@ def top_words_per_cluster(df, top_n=15):
     クラスタ1つを1文書とし、全クラスタを1つのコーパスとしてTF-IDFを学習する。
     どのクラスタにも出る語のIDFは1.0、一部のクラスタにしか出ない語はそれより大きい。
 
+    取り出せる語が1つも無い場合は、クラスタごとに空のリストを返す。
+
     戻り値: {クラスタID: [頻出語, ...]}
     """
     cluster_texts = df.groupby("クラスタID")["説明文"].apply(" ".join)
@@ -55,7 +57,12 @@ def top_words_per_cluster(df, top_n=15):
         stop_words=JAPANESE_STOPWORDS,
         token_pattern=None,  # tokenizer を渡すときは無効化する（警告回避）
     )
-    matrix = vectorizer.fit_transform(cluster_texts).toarray()
+    try:
+        matrix = vectorizer.fit_transform(cluster_texts).toarray()
+    except ValueError:
+        # 説明文がすべて空、または機能語しか含まない場合。TF-IDFの語彙が作れない
+        print("注意：説明文から頻出語を取り出せませんでした（対象になる語がありません）")
+        return {int(cluster_id): [] for cluster_id in cluster_texts.index}
     names = vectorizer.get_feature_names_out()
 
     result = {}

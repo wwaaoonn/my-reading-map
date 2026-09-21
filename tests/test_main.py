@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from main import decide_k, escape_csv_formulas
+from main import decide_k, escape_csv_formulas, stamped
 
 
 @pytest.fixture
@@ -19,15 +19,21 @@ class TestDecideKWithRequestedK:
         """指定された k をそのまま使う。"""
         assert decide_k(embeddings, tmp_path, 3) == 3
 
-    def test_accepts_k_equal_to_book_count(self, embeddings, tmp_path):
-        """冊数と同じ k は受け付ける。"""
-        assert decide_k(embeddings, tmp_path, 10) == 10
+    def test_accepts_k_one_below_book_count(self, embeddings, tmp_path):
+        """上限（冊数-1）の k は受け付ける。"""
+        assert decide_k(embeddings, tmp_path, 9) == 9
 
-    @pytest.mark.parametrize("requested_k", [0, 1, 11, 50])
+    @pytest.mark.parametrize("requested_k", [0, 1, 10, 11, 50])
     def test_rejects_k_outside_range(self, embeddings, tmp_path, requested_k):
-        """2未満、または冊数を超える k は止める。"""
+        """2未満、または冊数-1を超える k は止める。"""
         with pytest.raises(SystemExit) as error:
             decide_k(embeddings, tmp_path, requested_k)
+        assert "--k" in str(error.value)
+
+    def test_rejects_k_equal_to_book_count(self, embeddings, tmp_path):
+        """冊数と同じ k は止める（全クラスタが1冊になり指標が計算できない）。"""
+        with pytest.raises(SystemExit) as error:
+            decide_k(embeddings, tmp_path, len(embeddings))
         assert "--k" in str(error.value)
 
     def test_does_not_write_k_selection_files(self, embeddings, tmp_path):
@@ -38,15 +44,32 @@ class TestDecideKWithRequestedK:
 
 class TestDecideKAutomatically:
     def test_returns_k_within_range(self, embeddings, tmp_path):
-        """自動で決めた k は2以上、冊数以下。"""
+        """自動で決めた k は2以上、冊数-1以下。"""
         k = decide_k(embeddings, tmp_path, None)
-        assert 2 <= k <= len(embeddings)
+        assert 2 <= k <= len(embeddings) - 1
 
     def test_writes_k_selection_files(self, embeddings, tmp_path):
         """k の検討に使った指標を出力する。"""
         decide_k(embeddings, tmp_path, None)
         assert (tmp_path / "k_selection.csv").exists()
         assert (tmp_path / "k_selection.png").exists()
+
+    def test_writes_k_selection_files_with_stamp(self, embeddings, tmp_path):
+        """stamp を渡すと、ファイル名に実行時刻が入る。"""
+        decide_k(embeddings, tmp_path, None, "20260921-104300")
+        assert (tmp_path / "k_selection_20260921-104300.csv").exists()
+        assert (tmp_path / "k_selection_20260921-104300.png").exists()
+
+
+class TestStamped:
+    def test_inserts_stamp_before_extension(self):
+        """拡張子の前に実行時刻を挟む。"""
+        assert stamped("reading_map.png", "20260921-104300") == "reading_map_20260921-104300.png"
+
+    @pytest.mark.parametrize("stamp", [None, ""])
+    def test_keeps_name_without_stamp(self, stamp):
+        """stamp が無ければ名前を変えない。"""
+        assert stamped("reading_map.png", stamp) == "reading_map.png"
 
 
 class TestEscapeCsvFormulas:
