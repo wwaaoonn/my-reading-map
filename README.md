@@ -109,7 +109,7 @@ python -m src.name_clusters
 | ステップ | プログラム | 手法 | 目的 |
 | --- | --- | --- | --- |
 | 1. 読み込み | `src/embed.py` | pandasでCSVを読み、必須列を検査する | 説明文を処理できる形にそろえる |
-| 2. ベクトル化 | `src/embed.py` | Sentence-BERTで384次元に変換し、L2正則化する | 説明文の内容どうしを数値で比べられるようにする |
+| 2. ベクトル化 | `src/embed.py` | Sentence-BERTで384次元に変換し、L2正規化する | 説明文の内容どうしを数値で比べられるようにする |
 | 3. クラスタ数の決定 | `src/cluster.py` | エルボー法（inertia）、冊数から決まる上限、クラスタの最低冊数 | 冊数に合ったまとまりの数を決める |
 | 4. クラスタリング | `src/cluster.py` | KMeans（384次元空間、乱数固定） | 内容が近い本を同じグループにする |
 | 5. クラスタ名の生成 | `src/label.py`／`src/name_clusters.py` | Janome＋TF-IDFで頻出語、Claude APIで命名 | 図に載せる見出しを作る |
