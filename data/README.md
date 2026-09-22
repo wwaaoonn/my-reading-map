@@ -10,13 +10,12 @@
 | `sample_reading_log_1.csv` | 20 | 日本近代文学（小説・随筆・歌集・詩集・哲学） |
 | `sample_reading_log_2.csv` | 30 | 西洋の科学・思想の古典（生物・物理・天文・数学・心理・経済） |
 
+読書マップの作成には、以下のコマンドを実行します。
+
 ```bash
 python main.py data/sample_reading_log_1.csv
 python main.py data/sample_reading_log_2.csv
 ```
-
-`sample_reading_log_2.csv` の内訳は、生物・進化7冊、物理・化学6冊、天文・地質6冊、
-数学・科学方法論5冊、心理・看護4冊、経済2冊です。
 
 ## 読書ログCSVの仕様
 
