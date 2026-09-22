@@ -1,12 +1,20 @@
 # data ディレクトリ
 
-## sample_reading_log.csv
+## サンプルCSV
 
-動作確認用のサンプル（20冊）です。著作権の問題が起きないようパブリックドメインの
-作品を選び、説明文は本リポジトリの著者が書き下ろしています。
+動作確認用のサンプルが2つあります。どちらもパブリックドメインの作品を選び、説明文は
+本リポジトリの著者が書き下ろしています。
+
+| ファイル | 冊数 | 収録している分野 |
+| --- | --- | --- |
+| `sample_reading_log_1.csv` | 20 | 日本近代文学（小説・随筆・歌集・詩集・哲学） |
+| `sample_reading_log_2.csv` | 30 | 西洋の科学・思想の古典（生物・物理・天文・数学・心理・経済） |
+
+読書マップの作成には、以下のコマンドを実行します。
 
 ```bash
-python main.py data/sample_reading_log.csv
+python main.py data/sample_reading_log_1.csv
+python main.py data/sample_reading_log_2.csv
 ```
 
 ## 読書ログCSVの仕様

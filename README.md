@@ -20,7 +20,7 @@ Python 3.10〜3.12 が必要です。3.13以降では `pip install` が失敗し
 
 ```bash
 pip install -r requirements.txt
-python main.py data/sample_reading_log.csv
+python main.py data/sample_reading_log_1.csv
 ```
 
 `タイトル` と `説明文` の列があるCSVを渡せば、そのまま動きます。設定ファイルはありません。
@@ -91,7 +91,8 @@ python -m src.name_clusters
 │   ├── visualize.py         t-SNEと各種マップの描画
 │   └── plot_style.py        日本語フォントの設定
 ├── data/
-│   ├── sample_reading_log.csv   パブリックドメイン作品20冊のサンプル
+│   ├── sample_reading_log_1.csv パブリックドメイン作品20冊のサンプル（日本近代文学）
+│   ├── sample_reading_log_2.csv パブリックドメイン作品30冊のサンプル（西洋の科学・思想）
 │   └── README.md                CSVの仕様
 ├── tests/                   pytestのテスト（APIと埋め込みモデルは呼ばない）
 ├── requirements.txt         main.py の実行に必要なすべて
@@ -162,7 +163,8 @@ python -m src.name_clusters
 ## ライセンス
 
 このリポジトリのコード（`main.py` と `src/` 以下のスクリプト）と
-`data/sample_reading_log.csv` は MIT License（[LICENSE](LICENSE)）です。
+`data/sample_reading_log_1.csv`・`data/sample_reading_log_2.csv` は
+MIT License（[LICENSE](LICENSE)）です。
 
-`data/sample_reading_log.csv` の説明文は、パブリックドメイン作品について本リポジトリの
+2つのサンプルCSVの説明文は、パブリックドメイン作品について本リポジトリの
 著者が書き下ろしたものです。
