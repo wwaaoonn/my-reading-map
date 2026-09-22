@@ -71,7 +71,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="読書記録のCSVから読書マップを作る",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="例: python main.py data/sample_reading_log.csv",
+        epilog="例: python main.py data/sample_reading_log_1.csv",
     )
     parser.add_argument("csv", help="読書ログCSV（「タイトル」「説明文」の列が必要）")
     parser.add_argument(
