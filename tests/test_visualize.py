@@ -1,10 +1,10 @@
-"""src/visualize.py のテスト。描画そのものは確かめない。"""
+"""reading_map/visualize.py のテスト。描画そのものは確かめない。"""
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from src.visualize import (
+from reading_map.visualize import (
     ELLIPSE_MIN_AXIS_RATIO,
     PERPLEXITY_MAX,
     _plot_spread_ellipse,

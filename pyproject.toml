@@ -1,3 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reading-map"
+version = "0.1.0"
+description = "読書記録の説明文から読書マップを作る"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "pandas>=2.2.1,<3",
+    "numpy>=1.26.4,<2",
+    "scikit-learn>=1.5.1,<2",
+    "matplotlib>=3.8.3,<4",
+    "matplotlib-fontja>=1.0.0,<2",
+    "Janome>=0.5.0,<0.6",
+    "adjustText>=1.3.0,<2",
+    "anthropic>=1.7.0,<2",
+    "Brotli>=1.2.0",
+    "pydantic>=2.10.1,<3",
+    "python-dotenv>=1.0.1,<2",
+]
+
+[project.optional-dependencies]
+# 説明文のベクトル化（torch を含む）
+embed = ["sentence-transformers>=4.1.0,<5"]
+
+[tool.setuptools]
+# 配布物に含めるのは reading_map だけ（main.py・tests・data は含めない）
+packages = ["reading_map"]
+
 [tool.ruff]
 # 対応する下限のPython。3.10で動かない書き方を検出させる
 target-version = "py310"
@@ -17,6 +51,6 @@ ignore = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# tests から src を import できるようにする。
+# tests から reading_map を import できるようにする。
 # これが無いと、素の `pytest` では リポジトリ直下が sys.path に入らない
 pythonpath = ["."]

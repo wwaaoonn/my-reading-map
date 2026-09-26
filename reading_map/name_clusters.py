@@ -177,7 +177,7 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
 def check_connection(model=MODEL):
     """APIに繋がるかどうかだけを、小さなリクエストで確かめる。
 
-        python -m src.name_clusters
+        python -m reading_map.name_clusters
     """
     import anthropic
 

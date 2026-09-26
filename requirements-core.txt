@@ -8,5 +8,6 @@ matplotlib-fontja==1.0.0   # 図の日本語表示
 Janome==0.5.0              # 頻出語抽出の形態素解析
 adjustText==1.3.0          # ラベルの重なりを自動でずらす
 anthropic==1.7.0           # クラスタ名の生成（APIキーが無い場合は頻出語で代替）
+pydantic==2.10.1           # クラスタ名の構造化出力
 Brotli>=1.2.0              # anthropic が使うhttpx2の要求。1.1.0以下だとAPI応答の解凍に失敗する
 python-dotenv==1.0.1       # .env からAPIキーを読み込む

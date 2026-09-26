@@ -1,4 +1,4 @@
-"""src/embed.py のテスト。埋め込みモデルは読み込まない。"""
+"""reading_map/embed.py のテスト。埋め込みモデルは読み込まない。"""
 
 import json
 
@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.embed import (
+from reading_map.embed import (
     cache_mismatch,
     count_distinct_descriptions,
     descriptions_digest,
@@ -177,7 +177,7 @@ class TestLoadOrBuildEmbeddings:
             calls.append(model_name)
             return np.ones((len(list(descriptions)), 2), dtype=np.float32)
 
-        monkeypatch.setattr("src.embed.build_embeddings", build)
+        monkeypatch.setattr("reading_map.embed.build_embeddings", build)
         return calls
 
     def test_builds_and_writes_meta_on_first_run(self, tmp_path, df, fake_build):
