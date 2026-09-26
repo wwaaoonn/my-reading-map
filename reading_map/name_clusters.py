@@ -4,9 +4,12 @@
 APIキーが無い場合や接続できない場合は、頻出語をつないだ名前にフォールバックする。
 """
 
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 # APIキーを書いておくファイル。リポジトリ直下に置く（.gitignore 済み）
 ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
@@ -43,16 +46,17 @@ class ClusterTitles(BaseModel):
     titles: list[ClusterTitle]
 
 
-def load_env():
-    """リポジトリ直下の .env を読み込む。既にある環境変数は上書きしない。"""
-    if not ENV_FILE.exists():
+def load_env(path=ENV_FILE):
+    """.env ファイルを読み込む。既にある環境変数は上書きしない。"""
+    path = Path(path)
+    if not path.exists():
         return
     try:
         from dotenv import load_dotenv
     except ImportError:
-        print(f"{ENV_FILE.name} がありますが python-dotenv が入っていないため読み込めません")
+        logger.warning(f"{path.name} がありますが python-dotenv が入っていないため読み込めません")
         return
-    load_dotenv(ENV_FILE, override=False)
+    load_dotenv(path, override=False)
 
 
 def one_line(text):
@@ -98,19 +102,29 @@ def build_prompt(df, representatives, top_words):
     )
 
 
+def _fall_back(fallback, reason, *messages):
+    """頻出語の名前と切り替えた理由を返す。messages は warning でログに出す。"""
+    for message in messages:
+        logger.warning(message)
+    return fallback, reason
+
+
 def generate_cluster_names(df, representatives, top_words, model=MODEL):
     """Claudeにクラスタ名を作らせる。失敗したら頻出語による名前を返す。
 
-    戻り値: ({クラスタID: 名前}, AIで生成できたかどうか)
+    APIキーは環境変数 ANTHROPIC_API_KEY から読む。
+
+    戻り値: ({クラスタID: 名前}, 頻出語に切り替えた理由。生成AIで命名できたら None)
     """
     fallback = fallback_names(top_words)
-    load_env()
 
     try:
         import anthropic
     except ImportError:
-        print("anthropic パッケージが無いので、頻出語からクラスタ名を作ります")
-        return fallback, False
+        return _fall_back(
+            fallback, "anthropic パッケージが無い",
+            "anthropic パッケージが無いので、頻出語からクラスタ名を作ります",
+        )
 
     client = anthropic.Anthropic()
 
@@ -123,42 +137,56 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
             output_format=ClusterTitles,
         )
     except anthropic.AuthenticationError:
-        print("APIキーが拒否されたので、頻出語からクラスタ名を作ります")
-        return fallback, False
+        return _fall_back(
+            fallback, "APIキーが拒否された",
+            "APIキーが拒否されたので、頻出語からクラスタ名を作ります",
+        )
     except TypeError as error:
         # 認証情報が1つも見つからないとき、SDKは AuthenticationError ではなく
         # TypeError を投げる。それ以外の TypeError は投げ直す
         if "authentication" not in str(error).lower():
             raise
-        print(
+        return _fall_back(
+            fallback, "APIキーが見つからない",
             "APIキーが見つからないので、頻出語からクラスタ名を作ります"
-            "（.env か環境変数 ANTHROPIC_API_KEY を設定すると生成AIが命名します）"
+            "（.env か環境変数 ANTHROPIC_API_KEY を設定すると生成AIが命名します）",
         )
-        return fallback, False
     except anthropic.RateLimitError:
-        print("APIのレート制限に達したので、頻出語からクラスタ名を作ります")
-        return fallback, False
+        return _fall_back(
+            fallback, "APIのレート制限に達した",
+            "APIのレート制限に達したので、頻出語からクラスタ名を作ります",
+        )
     except anthropic.APIStatusError as error:
-        print(f"APIがエラーを返したので、頻出語からクラスタ名を作ります（{error.status_code}）")
-        print(f"  {error.message}")
-        return fallback, False
+        return _fall_back(
+            fallback, f"APIがエラーを返した（{error.status_code}）",
+            f"APIがエラーを返したので、頻出語からクラスタ名を作ります（{error.status_code}）",
+            f"  {error.message}",
+        )
     except anthropic.APITimeoutError:
-        print("APIへの接続がタイムアウトしたので、頻出語からクラスタ名を作ります")
-        print(f"  接続先: {client.base_url}")
-        return fallback, False
+        return _fall_back(
+            fallback, "APIへの接続がタイムアウトした",
+            "APIへの接続がタイムアウトしたので、頻出語からクラスタ名を作ります",
+            f"  接続先: {client.base_url}",
+        )
     except anthropic.APIConnectionError as error:
-        # 原因（DNS・TLS・接続拒否など）と接続先を表示する
-        print("APIに接続できないので、頻出語からクラスタ名を作ります")
-        print(f"  接続先: {client.base_url}")
-        print(f"  原因: {error.__cause__ or error}")
+        # 原因（DNS・TLS・接続拒否など）と接続先を出す
+        messages = [
+            "APIに接続できないので、頻出語からクラスタ名を作ります",
+            f"  接続先: {client.base_url}",
+            f"  原因: {error.__cause__ or error}",
+        ]
         if str(client.base_url).rstrip("/") != DEFAULT_BASE_URL:
-            print(f"  接続先が {DEFAULT_BASE_URL} ではありません。"
-                  "環境変数 ANTHROPIC_BASE_URL を確認してください")
-        return fallback, False
+            messages.append(
+                f"  接続先が {DEFAULT_BASE_URL} ではありません。"
+                "環境変数 ANTHROPIC_BASE_URL を確認してください"
+            )
+        return _fall_back(fallback, "APIに接続できない", *messages)
 
     if response.stop_reason == "refusal":
-        print("APIが応答を拒否したので、頻出語からクラスタ名を作ります")
-        return fallback, False
+        return _fall_back(
+            fallback, "APIが応答を拒否した",
+            "APIが応答を拒否したので、頻出語からクラスタ名を作ります",
+        )
 
     names = dict(fallback)
     for item in response.parsed_output.titles:
@@ -169,9 +197,9 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
 
     missing = [cid for cid in fallback if names[cid] == fallback[cid]]
     if missing:
-        print(f"一部のクラスタ名が生成されなかったので頻出語で補いました: {missing}")
+        logger.warning(f"一部のクラスタ名が生成されなかったので頻出語で補いました: {missing}")
 
-    return names, True
+    return names, None
 
 
 def check_connection(model=MODEL):
@@ -181,7 +209,6 @@ def check_connection(model=MODEL):
     """
     import anthropic
 
-    load_env()
     client = anthropic.Anthropic()
     print(f"接続先: {client.base_url}")
     if str(client.base_url).rstrip("/") != DEFAULT_BASE_URL:
@@ -216,4 +243,5 @@ def check_connection(model=MODEL):
 
 
 if __name__ == "__main__":
+    load_env()
     raise SystemExit(0 if check_connection() else 1)

@@ -2,10 +2,13 @@
 
 import hashlib
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 REQUIRED_COLUMNS = ["タイトル", "説明文"]
 
@@ -21,24 +24,33 @@ E5_PREFIX = "query: "
 
 
 
-def load_reading_log(path):
-    """読書ログCSVを読み込み、必須列があるか確認する。"""
-    df = pd.read_csv(path)
+def prepare_reading_log(df, source=None):
+    """読書ログの DataFrame の必須列を確認し、説明文を整えた複製を返す。
 
+    source は必須列が無いときのメッセージの先頭に付ける（読み込んだファイルなど）。
+    渡した df は変更しない。
+    """
     missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
     if missing:
-        raise ValueError(
-            f"{path} に必須列がありません: {missing}（必要な列: {REQUIRED_COLUMNS}）"
-        )
+        prefix = f"{source} に" if source is not None else ""
+        raise ValueError(f"{prefix}必須列がありません: {missing}（必要な列: {REQUIRED_COLUMNS}）")
 
+    df = df.copy()
     # 説明文の欠損は空文字にして、以降の処理で落ちないようにする
     df["説明文"] = df["説明文"].fillna("").astype(str)
 
     empty = int((df["説明文"].str.strip() == "").sum())
     if empty:
-        print(f"注意：説明文が空の行が {empty} 件あります（ベクトルが意味を持ちません）")
+        logger.warning(
+            f"注意：説明文が空の行が {empty} 件あります（ベクトルが意味を持ちません）"
+        )
 
     return df
+
+
+def load_reading_log(path):
+    """読書ログCSVを読み込み、必須列があるか確認する。"""
+    return prepare_reading_log(pd.read_csv(path), source=path)
 
 
 def count_distinct_descriptions(df):
@@ -59,7 +71,7 @@ def build_embeddings(descriptions, model_name):
     # 実際に計算するときだけ読み込む
     from sentence_transformers import SentenceTransformer
 
-    print(f"モデルを読み込み中: {model_name}")
+    logger.info(f"モデルを読み込み中: {model_name}")
     texts = list(descriptions)
     if "e5" in model_name.lower():
         texts = [E5_PREFIX + t for t in texts]
@@ -118,9 +130,9 @@ def load_or_build_embeddings(df, model_name, cache_path, force=False):
         embeddings = np.load(cache_path)
         reason = cache_mismatch(_read_meta(meta_path(cache_path)), df, model_name, embeddings)
         if reason is None:
-            print(f"埋め込みをキャッシュから読み込みました: {cache_path} {embeddings.shape}")
+            logger.info(f"埋め込みをキャッシュから読み込みました: {cache_path} {embeddings.shape}")
             return l2_normalize(embeddings)
-        print(f"キャッシュを使えないので作り直します（{reason}）")
+        logger.info(f"キャッシュを使えないので作り直します（{reason}）")
 
     embeddings = build_embeddings(df["説明文"], model_name)
     assert embeddings.shape[0] == len(df), "件数が一致しません"
@@ -135,30 +147,29 @@ def load_or_build_embeddings(df, model_name, cache_path, force=False):
     }
     with open(meta_path(cache_path), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-    print(f"埋め込みを保存しました: {cache_path} {embeddings.shape}")
+    logger.info(f"埋め込みを保存しました: {cache_path} {embeddings.shape}")
 
     return l2_normalize(embeddings)
 
 
-def similar_pairs(df, embeddings, threshold=0.5):
-    """類似度がしきい値を超える本のペアを、類似度の高い順に返す。"""
+def similar_pair_positions(embeddings, threshold=0.5):
+    """類似度がしきい値を超える本のペアを、類似度の高い順に返す。
+
+    戻り値: 列 book1・book2（行の位置。book1 < book2）・similarity の DataFrame
+    """
     from sklearn.metrics.pairwise import cosine_similarity
 
     similarity = cosine_similarity(embeddings)
-    titles = df["タイトル"].tolist()
+    n_books = len(similarity)
 
     rows = []
-    for i in range(len(titles)):
-        for j in range(i + 1, len(titles)):
+    for i in range(n_books):
+        for j in range(i + 1, n_books):
             if similarity[i, j] > threshold:
                 rows.append(
-                    {
-                        "本1": titles[i],
-                        "本2": titles[j],
-                        "類似度": round(float(similarity[i, j]), 3),
-                    }
+                    {"book1": i, "book2": j, "similarity": round(float(similarity[i, j]), 3)}
                 )
 
     if not rows:
-        return pd.DataFrame(columns=["本1", "本2", "類似度"])
-    return pd.DataFrame(rows).sort_values("類似度", ascending=False, ignore_index=True)
+        return pd.DataFrame(columns=["book1", "book2", "similarity"])
+    return pd.DataFrame(rows).sort_values("similarity", ascending=False, ignore_index=True)

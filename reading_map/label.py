@@ -1,6 +1,10 @@
 """クラスタごとの頻出語抽出（Janomeで形態素解析 → TF-IDF）。"""
 
+import logging
+
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+logger = logging.getLogger(__name__)
 
 # 頻出語として残す品詞
 TARGET_PARTS = ("名詞", "動詞", "形容詞")
@@ -61,7 +65,7 @@ def top_words_per_cluster(df, top_n=15):
         matrix = vectorizer.fit_transform(cluster_texts).toarray()
     except ValueError:
         # 説明文がすべて空、または機能語しか含まない場合。TF-IDFの語彙が作れない
-        print("注意：説明文から頻出語を取り出せませんでした（対象になる語がありません）")
+        logger.warning("注意：説明文から頻出語を取り出せませんでした（対象になる語がありません）")
         return {int(cluster_id): [] for cluster_id in cluster_texts.index}
     names = vectorizer.get_feature_names_out()
 

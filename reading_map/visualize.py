@@ -1,5 +1,7 @@
 """t-SNEによる2次元化と、読書マップの描画。"""
 
+import logging
+
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,6 +9,8 @@ from sklearn.manifold import TSNE
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .plot_style import setup_japanese_font
+
+logger = logging.getLogger(__name__)
 
 CMAP = plt.get_cmap("tab10")
 
@@ -46,7 +50,7 @@ def compute_tsne(embeddings, perplexity=None, random_state=42):
     if perplexity is None:
         perplexity = auto_perplexity(n_books)
     perplexity = max(2, min(perplexity, n_books - 1))
-    print(f"  perplexity={perplexity}")
+    logger.info(f"  perplexity={perplexity}")
     tsne = TSNE(
         n_components=2, random_state=random_state, perplexity=perplexity, metric="cosine"
     )
@@ -188,7 +192,7 @@ def plot_reading_map(df, cluster_names, out_path, dpi=200):
     plt.tight_layout()
     plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    print(f"全体マップを保存しました: {out_path}")
+    logger.info(f"全体マップを保存しました: {out_path}")
 
 
 def plot_cluster_maps(df, embeddings, cluster_names, out_dir, stamp=None, top_n_titles=5, dpi=200):
@@ -239,5 +243,5 @@ def plot_cluster_maps(df, embeddings, cluster_names, out_dir, stamp=None, top_n_
         plt.close(fig)
         saved.append(out_path)
 
-    print(f"クラスタ別マップを保存しました: {len(saved)}枚")
+    logger.info(f"クラスタ別マップを保存しました: {len(saved)}枚")
     return saved

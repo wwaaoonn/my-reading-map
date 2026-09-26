@@ -1,6 +1,7 @@
 """reading_map/name_clusters.py のテスト。APIは呼ばず、クライアントを差し替える。"""
 
 import builtins
+import os
 
 import anthropic
 import httpx2
@@ -16,6 +17,7 @@ from reading_map.name_clusters import (
     build_prompt,
     fallback_names,
     generate_cluster_names,
+    load_env,
     one_line,
 )
 
@@ -164,7 +166,7 @@ class TestOneLine:
 
 
 class TestGenerateClusterNamesFallback:
-    """APIが使えない場合、頻出語の名前と by_ai=False を返す。"""
+    """APIが使えない場合、頻出語の名前と切り替えた理由を返す。"""
 
     def test_falls_back_when_anthropic_missing(self, monkeypatch, df, representatives, top_words):
         """anthropic が入っていない。"""
@@ -176,8 +178,8 @@ class TestGenerateClusterNamesFallback:
             return real_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
-        names, by_ai = generate_cluster_names(df, representatives, top_words)
-        assert by_ai is False
+        names, reason = generate_cluster_names(df, representatives, top_words)
+        assert reason is not None
         assert names == fallback_names(top_words)
 
     @pytest.mark.parametrize(
@@ -194,9 +196,30 @@ class TestGenerateClusterNamesFallback:
     def test_falls_back_on_api_error(self, fake_client, df, representatives, top_words, error):
         """APIが失敗したら頻出語に戻す。"""
         fake_client.error = error
-        names, by_ai = generate_cluster_names(df, representatives, top_words)
-        assert by_ai is False
+        names, reason = generate_cluster_names(df, representatives, top_words)
+        assert reason is not None
         assert names == fallback_names(top_words)
+
+    @pytest.mark.parametrize(
+        ("error", "expected"),
+        [
+            (api_error(401, anthropic.AuthenticationError), "APIキーが拒否された"),
+            (api_error(429, anthropic.RateLimitError), "APIのレート制限に達した"),
+            (api_error(500, anthropic.InternalServerError), "APIがエラーを返した（500）"),
+            (anthropic.APITimeoutError(request=REQUEST), "APIへの接続がタイムアウトした"),
+            (anthropic.APIConnectionError(request=REQUEST), "APIに接続できない"),
+            (TypeError("missing authentication credentials"), "APIキーが見つからない"),
+        ],
+    )
+    def test_returns_reason_and_logs_warning(
+        self, fake_client, caplog, df, representatives, top_words, error, expected
+    ):
+        """切り替えた理由を返し、詳細は warning でログに出す。"""
+        fake_client.error = error
+        with caplog.at_level("WARNING", logger="reading_map.name_clusters"):
+            _, reason = generate_cluster_names(df, representatives, top_words)
+        assert reason == expected
+        assert "頻出語からクラスタ名を作ります" in caplog.text
 
     def test_reraises_unrelated_type_error(self, fake_client, df, representatives, top_words):
         """認証以外の TypeError は投げ直す。"""
@@ -207,17 +230,39 @@ class TestGenerateClusterNamesFallback:
     def test_falls_back_on_refusal(self, fake_client, df, representatives, top_words):
         """APIが拒否したら頻出語に戻す。"""
         fake_client.result = FakeResponse([(0, "猫の本")], stop_reason="refusal")
-        names, by_ai = generate_cluster_names(df, representatives, top_words)
-        assert by_ai is False
+        names, reason = generate_cluster_names(df, representatives, top_words)
+        assert reason is not None
         assert names == fallback_names(top_words)
+
+
+class TestLoadEnv:
+    def test_reads_given_file(self, tmp_path, monkeypatch):
+        """渡したファイルを読む。"""
+        monkeypatch.delenv("READING_MAP_TEST_VALUE", raising=False)
+        env = tmp_path / "test.env"
+        env.write_text("READING_MAP_TEST_VALUE=abc\n", encoding="utf-8")
+        load_env(env)
+        assert os.environ["READING_MAP_TEST_VALUE"] == "abc"
+
+    def test_keeps_existing_variables(self, tmp_path, monkeypatch):
+        """既にある環境変数は上書きしない。"""
+        monkeypatch.setenv("READING_MAP_TEST_VALUE", "before")
+        env = tmp_path / "test.env"
+        env.write_text("READING_MAP_TEST_VALUE=after\n", encoding="utf-8")
+        load_env(env)
+        assert os.environ["READING_MAP_TEST_VALUE"] == "before"
+
+    def test_ignores_missing_file(self, tmp_path):
+        """ファイルが無ければ何もしない。"""
+        load_env(tmp_path / "missing.env")
 
 
 class TestGenerateClusterNamesSuccess:
     def test_uses_returned_titles(self, fake_client, df, representatives, top_words):
         """返ってきた見出しを使う。"""
         fake_client.result = FakeResponse([(0, "動物をめぐる物語"), (1, "宇宙への旅")])
-        names, by_ai = generate_cluster_names(df, representatives, top_words)
-        assert by_ai is True
+        names, reason = generate_cluster_names(df, representatives, top_words)
+        assert reason is None
         assert names == {0: "動物をめぐる物語", 1: "宇宙への旅"}
 
     def test_fills_missing_titles_with_fallback(self, fake_client, df, representatives, top_words):
