@@ -1,9 +1,9 @@
-"""src/cluster.py のテスト。"""
+"""reading_map/cluster.py のテスト。"""
 
 import numpy as np
 import pandas as pd
 
-from src.cluster import (
+from reading_map.cluster import (
     MIN_BOOKS_PER_CLUSTER,
     MIN_CLUSTER_BOOKS,
     elbow_k,

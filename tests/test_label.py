@@ -1,8 +1,8 @@
-"""src/label.py のテスト。"""
+"""reading_map/label.py のテスト。"""
 
 import pandas as pd
 
-from src.label import tokenize_japanese, top_words_per_cluster
+from reading_map.label import tokenize_japanese, top_words_per_cluster
 
 
 class TestTokenizeJapanese:

@@ -1,4 +1,4 @@
-"""src/name_clusters.py のテスト。APIは呼ばず、クライアントを差し替える。"""
+"""reading_map/name_clusters.py のテスト。APIは呼ばず、クライアントを差し替える。"""
 
 import builtins
 
@@ -7,7 +7,7 @@ import httpx2
 import pandas as pd
 import pytest
 
-from src.name_clusters import (
+from reading_map.name_clusters import (
     BOOKS_PER_CLUSTER,
     DESCRIPTION_CHARS,
     TITLE_MAX_CHARS,

@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import cluster as cluster_mod
-from src import visualize as viz
-from src.embed import (
+from reading_map import cluster as cluster_mod
+from reading_map import visualize as viz
+from reading_map.embed import (
     MIN_BOOKS,
     MIN_DISTINCT_DESCRIPTIONS,
     count_distinct_descriptions,
@@ -23,8 +23,8 @@ from src.embed import (
     load_reading_log,
     similar_pairs,
 )
-from src.label import top_words_per_cluster
-from src.name_clusters import MODEL, generate_cluster_names
+from reading_map.label import top_words_per_cluster
+from reading_map.name_clusters import MODEL, generate_cluster_names
 
 # 公開用CSVから外す列
 PUBLIC_EXCLUDE_COLUMNS = ["説明文"]
@@ -179,7 +179,7 @@ def main():
 
     print("\n[5/6] クラスタ名を生成")
     if args.no_ai_names:
-        from src.name_clusters import fallback_names
+        from reading_map.name_clusters import fallback_names
 
         cluster_names, by_ai = fallback_names(top_words), False
     else:
