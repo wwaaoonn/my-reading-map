@@ -1,14 +1,19 @@
 """main.py のテスト（MapResult から出力する表とファイル）。"""
 
+import json
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
 
+import main as main_mod
 from main import (
     books_frame,
     escape_csv_formulas,
     k_scores_frame,
     pairs_frame,
+    result_json,
     stamped,
     summary_frame,
     write_outputs,
@@ -146,6 +151,64 @@ class TestWriteOutputs:
         ]:
             assert f"{name}_20260921-104300.csv" in names
 
+
+class TestResultJson:
+    def test_can_be_loaded(self, result):
+        """json.loads で読め、MapResult の値が入っている。"""
+        data = json.loads(result_json(result))
+        assert data["k"] == 2
+        assert [c["name"] for c in data["clusters"]] == ["動物", "天体"]
+
+    def test_keeps_japanese_unescaped(self, result):
+        """日本語はエスケープしない。"""
+        text = result_json(result)
+        assert "動物" in text
+        assert "\\u" not in text
+
+    def test_writes_nan_as_null(self, result):
+        """nan の silhouette は null にする。"""
+        result.silhouette = float("nan")
+        result.k_scores[0].silhouette = float("nan")
+        text = result_json(result)
+        assert "NaN" not in text
+        data = json.loads(text)
+        assert data["silhouette"] is None
+        assert data["k_scores"][0]["silhouette"] is None
+
+
+class TestMainWithJson:
+    @pytest.fixture
+    def run_main(self, df, embeddings, result, tmp_path, monkeypatch):
+        """埋め込みの作成と計算を差し替えて、--json 付きで main() を呼ぶ関数を返す。"""
+        csv_path = tmp_path / "log.csv"
+        df.to_csv(csv_path, index=False)
+        out_dir = tmp_path / "out"
+        monkeypatch.setattr(main_mod, "load_or_build_embeddings", lambda *a, **kw: embeddings)
+        monkeypatch.setattr(main_mod, "build_reading_map", lambda *a, **kw: result)
+        monkeypatch.setattr(
+            sys, "argv",
+            ["main.py", str(csv_path), "--no-ai-names", "--json", "--out", str(out_dir)],
+        )
+
+        def run():
+            main_mod.main()
+            return out_dir
+
+        return run
+
+    def test_writes_only_json_to_stdout(self, run_main, capsys):
+        """標準出力にはJSONだけを出し、末尾は改行。"""
+        run_main()
+        out = capsys.readouterr().out
+        assert out.endswith("\n")
+        assert json.loads(out)["k"] == 2
+
+    def test_does_not_write_png_or_csv(self, run_main):
+        """PNG・CSVは書き出さない。--out のディレクトリは作る。"""
+        out_dir = run_main()
+        assert out_dir.is_dir()
+        assert not list(out_dir.glob("*.png"))
+        assert not list(out_dir.glob("*.csv"))
 
 
 class TestStamped:

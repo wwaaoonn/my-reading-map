@@ -2,7 +2,7 @@
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -101,6 +101,26 @@ class MapResult:
     naming_fallback_reason: str | None = None
     # k を自動で決めたときの各kの指標（kの昇順）。k を指定したときは None
     k_scores: list[KScore] | None = field(default=None)
+
+    def to_dict(self) -> dict:
+        """JSONに書ける dict にする。
+
+        キーはフィールド名。books などは dict のリスト。
+        silhouette と k_scores の各 silhouette の nan は None にする。
+        """
+        data = asdict(self)
+        data["silhouette"] = nan_to_none(data["silhouette"])
+        if data["k_scores"] is not None:
+            for score in data["k_scores"]:
+                score["silhouette"] = nan_to_none(score["silhouette"])
+        return data
+
+
+def nan_to_none(value):
+    """nan なら None、それ以外はそのまま返す。"""
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return value
 
 
 def check_reading_log(df):

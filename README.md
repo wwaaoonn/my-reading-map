@@ -10,12 +10,12 @@
 
 ### 環境
 
-Python 3.10〜3.12 が必要です。3.13以降では `pip install` が失敗します。`.python-version` に
-`3.12` を置いているので、pyenv と uv はこのディレクトリで3.12に切り替わります。
+Python 3.10〜3.12 が必要です。3.13以降では `pip install` が失敗します。`.python-version` は
+`3.12` です。pyenv と uv はこのディレクトリで3.12に切り替わります。
 
 ### 実行コマンド
 
-プログラムの動作確認のために、以下のコマンドを実行します。初回実行時に文埋め込みモデル
+以下のコマンドで、サンプルCSVから読書マップを作ります。初回実行時に文埋め込みモデル
 （約500MB）のダウンロードが走ります。
 
 ```bash
@@ -60,12 +60,13 @@ python -m reading_map.name_clusters
 | `--perplexity N` | 自動 | t-SNEのperplexity。省略すると冊数から決める |
 | `--embed-model` | MiniLM | 文埋め込みモデルを差し替える |
 | `--force-embed` | | キャッシュを無視してベクトル化をやり直す |
+| `--json` | | PNG・CSVを書き出さず、計算結果（`MapResult`）をJSONで標準出力に出す |
 
 ### 出力されるファイル
 
-出力されるもの（`outputs/`）。ファイル名には実行時刻が入るので、同じ出力先に何度実行しても
-前回の結果は上書きされません（例: `reading_map_20260921-104300.png`）。キャッシュの2ファイル
-だけは時刻が付かず、実行のたびに使い回します。
+出力されるもの（`outputs/`）。ファイル名には実行時刻が入ります
+（例: `reading_map_20260921-104300.png`）。同じ出力先に何度実行しても、前回の結果は
+上書きされません。キャッシュの2ファイルだけは時刻が付かず、実行のたびに使い回します。進み具合の表示は標準エラーに出ます。
 
 | ファイル | 中身 |
 | --- | --- |
@@ -79,16 +80,94 @@ python -m reading_map.name_clusters
 | `embeddings.npy` | ベクトルのキャッシュ |
 | `embeddings.json` | キャッシュのメタ情報。モデル名・次元数・件数・説明文のハッシュ |
 
+`--json` を付けたときは、PNG・CSVを書き出さず、`MapResult.to_dict()` の内容をJSONで
+標準出力に出します。nan は `null` になります。埋め込みのキャッシュ（`embeddings.npy`・
+`embeddings.json`）は `--out` に置きます。
+
+```bash
+python main.py data/sample_reading_log_1.csv --json > result.json
+```
+
+### ライブラリとして使う
+
+`reading_map` をパッケージとしてインストールできます。配布名は `reading-map` で、
+配布物に含まれるのは `reading_map/` だけです（`main.py`・`tests/`・`data/` は含みません）。
+
+```bash
+pip install "git+https://github.com/wwaaoonn/my-reading-map@v0.1.0"
+```
+
+説明文のベクトル化（sentence-transformers）も使う場合は、extras の `embed` を付けます。
+
+```bash
+pip install "reading-map[embed] @ git+https://github.com/wwaaoonn/my-reading-map@v0.1.0"
+```
+
+読み込み・ベクトル化・計算の順に呼びます。
+
+```python
+from reading_map.embed import build_embeddings, l2_normalize, load_reading_log
+from reading_map.pipeline import MapOptions, build_reading_map
+
+df = load_reading_log("読書記録.csv")
+embeddings = l2_normalize(
+    build_embeddings(df["説明文"], "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+)
+result = build_reading_map(df, embeddings, MapOptions(ai_names=False))
+result.to_dict()
+```
+
+`build_reading_map(df, embeddings, options=None)` は `MapResult` を返します。`df` には
+`タイトル` と `説明文` の列が必要で、`embeddings` は `df` と行の順番で対応させます。
+`df` は変更しません。
+
+- 本は、入力した DataFrame の行の位置（0始まり）で指します。
+- ファイルは書き出しません。
+- 入力の誤り（必須列が無い、3冊未満、内容の異なる説明文が2件未満、`df` と `embeddings` の
+  行数が違う、`k` が範囲外）は `ValueError` になります。`check_reading_log(df)` は
+  冊数と説明文だけを確かめます（`df` は `load_reading_log` で読んだもの）。
+- 生成AIの命名は環境変数 `ANTHROPIC_API_KEY` を使います。`.env` の読み込みは CLI
+  （`main.py` と `python -m reading_map.name_clusters`）だけが行います。
+- ログは `logging` のロガー `reading_map` に出ます。
+- `MapResult.to_dict()` はJSONにできる dict を返します。nan は `None` になります。
+
+`MapOptions` の項目（すべて省略できます）
+
+| 項目 | 既定 | 説明 |
+| --- | --- | --- |
+| `k` | `None` | クラスタ数（2以上・冊数-1以下）。`None` ならデータから決める |
+| `perplexity` | `None` | t-SNEのperplexity。`None` なら冊数から決める |
+| `ai_names` | `True` | `False` なら生成AIを呼ばず、頻出語からクラスタ名を作る |
+| `model` | `"claude-opus-5"` | 命名に使うモデル |
+| `pair_threshold` | `0.5` | 類似ペアに含める類似度の下限（この値を超えるペアを含める） |
+| `representatives_per_cluster` | `8` | クラスタごとに返す代表本の数 |
+| `kmeans_random_state` | `0` | KMeansとシルエット係数の乱数のシード |
+| `tsne_random_state` | `42` | t-SNEの乱数のシード |
+
+`MapResult` の項目
+
+| 項目 | 型 | 中身 |
+| --- | --- | --- |
+| `books` | `list[Book]` | 入力した `df` の行の順。各要素は `position`（行の位置）・`title`・`cluster_id`・`x`・`y`（t-SNEの座標） |
+| `clusters` | `list[Cluster]` | クラスタIDの順。各要素は `cluster_id`・`name`（クラスタ名）・`size`（冊数）・`top_words`（頻出語。最大15語）・`representatives`（重心に近い順の行の位置） |
+| `similar_pairs` | `list[SimilarPair]` | 類似度の高い順。各要素は `book1`・`book2`（行の位置。`book1 < book2`）・`similarity`（コサイン類似度。小数第3位まで） |
+| `k` | `int` | 採用したクラスタ数 |
+| `silhouette` | `float` | 採用したkのシルエット係数（コサイン距離）。計算できないときは nan |
+| `naming` | `"ai"` または `"top_words"` | `"ai"` は生成AIが命名した、`"top_words"` は頻出語から命名した |
+| `naming_fallback_reason` | `str` または `None` | 生成AIでの命名に失敗して頻出語に切り替えた理由。切り替えていなければ `None` |
+| `k_scores` | `list[KScore]` または `None` | kを自動で決めたときの各kの指標（kの昇順）。各要素は `k`・`inertia`・`silhouette`・`min_cluster_size`（最小クラスタの冊数）。kを指定したときは `None` |
+
 ## ディレクトリ構成
 
 ```text
-├── main.py                  実行の入口（python main.py <CSV>）
+├── main.py                  実行の入口（python main.py <CSV>）。キャッシュと出力の書き出し
 ├── reading_map/
-│   ├── embed.py             CSVの読み込みと説明文のベクトル化
-│   ├── cluster.py           クラスタ数の決定とKMeans
+│   ├── pipeline.py          読書マップの計算（build_reading_map）。ファイルは書き出さない
+│   ├── embed.py             CSVの読み込み、説明文のベクトル化とキャッシュ、類似ペアの抽出
+│   ├── cluster.py           クラスタ数の決定、KMeans、クラスタ数の検討グラフの描画
 │   ├── label.py             頻出語の抽出（Janome + TF-IDF）
-│   ├── name_clusters.py     クラスタ名の生成（Claude API）
-│   ├── visualize.py         t-SNEと各種マップの描画
+│   ├── name_clusters.py     クラスタ名の生成（Claude API）とAPIの接続確認
+│   ├── visualize.py         t-SNE、代表本の選定、各種マップの描画
 │   └── plot_style.py        日本語フォントの設定
 ├── data/
 │   ├── sample_reading_log_1.csv パブリックドメイン作品20冊のサンプル（日本近代文学）
@@ -98,7 +177,7 @@ python -m reading_map.name_clusters
 ├── requirements.txt         main.py の実行に必要なすべて
 ├── requirements-core.txt    埋め込みモデル以外の依存
 ├── requirements-dev.txt     テストとlintに必要な依存
-├── pyproject.toml           ruffとpytestの設定
+├── pyproject.toml           パッケージの定義とruff・pytestの設定
 └── docs/                    READMEのトップに貼る図
 ```
 
@@ -115,8 +194,12 @@ python -m reading_map.name_clusters
 | 5. クラスタ名の生成 | `reading_map/label.py`／`reading_map/name_clusters.py` | Janome＋TF-IDFで頻出語、Claude APIで命名 | 図に載せる見出しを作る |
 | 6. 2次元化と描画 | `reading_map/visualize.py`／`reading_map/plot_style.py` | t-SNE（コサイン）、matplotlib、adjustText | 地図として1枚の画像にする |
 
+ステップ1・2は `main.py` が呼び出します。ステップ3〜5とステップ6のt-SNEは
+`reading_map/pipeline.py` の `build_reading_map` が呼び出します。ステップ6の描画と
+ファイルの書き出しは `main.py` が行います（`--json` のときは行いません）。
+
 グループ分けはステップ4までに384次元空間で完了します。ステップ6は、その結果を
-人が見て分かる形にするための描画です。
+2次元に描画します。
 
 ### その他の仕様
 
@@ -148,16 +231,17 @@ python -m reading_map.name_clusters
 
 - **APIに送るデータ**　クラスタごとに、重心に近い順で最大8冊分のタイトルと説明文
   （先頭300文字）・頻出語・冊数を送ります。返り値はPydanticのモデルで構造化出力として
-  受け取ります。`--no-ai-names` のときは送りません。
+  受け取ります。`--no-ai-names`（`MapOptions(ai_names=False)`）のときは送りません。
 
 - **t-SNE**　perplexityは冊数から決めます（`min(30, (冊数 - 1) // 3)`、下限5）。
+  指定した値も冊数から決めた値も、2以上・`冊数 - 1` 以下に収めて使います。
 
 - **楕円**　クラスタの領域の目安で、統計的な信頼区間ではありません。2冊以上のクラスタに
   描き、2冊のクラスタや直線状に並んだクラスタでは、短軸を長軸の0.35倍まで確保します。
 
 - **再現性**　t-SNEの乱数は固定しています。同じCSVを同じ設定で実行すれば、座標は前回と
   一致します。説明文や冊数が変わると座標は変わります。クラスタ名は実行のたびに生成AIが
-  作るので、同じCSVでも文言は変わります（`--no-ai-names` のときは頻出語から作るので
+  作り、同じCSVでも文言は変わります（`--no-ai-names` のときは頻出語から作り、文言は
   変わりません）。
 
 ## ライセンス

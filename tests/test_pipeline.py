@@ -1,6 +1,7 @@
 """reading_map/pipeline.py のテスト。埋め込みモデルと生成AIのAPIは呼ばない。"""
 
 import dataclasses
+import json
 import math
 
 import numpy as np
@@ -385,6 +386,80 @@ class TestBuildReadingMapOutput:
             assert type(score.inertia) is float
             assert type(score.silhouette) is float
             assert type(score.min_cluster_size) is int
+
+
+class TestMapResultToDict:
+    @pytest.fixture
+    def result(self, df, embeddings, ai_calls):
+        """k を自動で決め、生成AIを使わずに作った結果。"""
+        return build_reading_map(df, embeddings, MapOptions(ai_names=False))
+
+    @pytest.fixture
+    def nan_result(self):
+        """silhouette が nan の結果。"""
+        return MapResult(
+            books=[
+                Book(position=0, title="猫の本", cluster_id=0, x=0.0, y=0.0),
+                Book(position=1, title="星の本", cluster_id=1, x=1.0, y=1.0),
+            ],
+            clusters=[
+                Cluster(0, "動物", 1, ["猫"], [0]),
+                Cluster(1, "天体", 1, ["星"], [1]),
+            ],
+            similar_pairs=[],
+            k=2,
+            silhouette=float("nan"),
+            naming="top_words",
+            k_scores=[KScore(k=2, inertia=0.0, silhouette=float("nan"), min_cluster_size=1)],
+        )
+
+    def test_passes_json_dumps(self, result):
+        """allow_nan=False の json.dumps が通る。"""
+        json.dumps(result.to_dict(), allow_nan=False)
+
+    def test_has_every_field(self, result):
+        """全フィールドのキーがあり、books などは dict のリスト。"""
+        data = result.to_dict()
+        assert set(data) == {field.name for field in dataclasses.fields(MapResult)}
+        for key in ["books", "clusters", "similar_pairs", "k_scores"]:
+            assert isinstance(data[key], list)
+            assert all(isinstance(item, dict) for item in data[key])
+        assert set(data["books"][0]) == {"position", "title", "cluster_id", "x", "y"}
+
+    def test_converts_nan_to_none(self, nan_result):
+        """nan の silhouette は None にする（k_scores の中も）。"""
+        data = nan_result.to_dict()
+        assert data["silhouette"] is None
+        assert data["k_scores"][0]["silhouette"] is None
+        json.dumps(data, allow_nan=False)
+
+    def test_does_not_modify_result(self, nan_result):
+        """元の MapResult の nan は変えない。"""
+        nan_result.to_dict()
+        assert math.isnan(nan_result.silhouette)
+        assert math.isnan(nan_result.k_scores[0].silhouette)
+
+    def test_keeps_k_scores_none(self, df, embeddings, ai_calls):
+        """k_scores が None なら None。"""
+        result = build_reading_map(df, embeddings, MapOptions(k=3, ai_names=False))
+        assert result.to_dict()["k_scores"] is None
+
+    def test_round_trips_through_json(self, result):
+        """JSONを読み戻した値が元の MapResult の値と一致する。"""
+        data = json.loads(json.dumps(result.to_dict(), allow_nan=False))
+        assert data["k"] == result.k
+        assert data["naming"] == result.naming
+        assert data["silhouette"] == result.silhouette
+        assert [c["name"] for c in data["clusters"]] == [c.name for c in result.clusters]
+        assert [c["top_words"] for c in data["clusters"]] == [
+            c.top_words for c in result.clusters
+        ]
+        assert [b["title"] for b in data["books"]] == [b.title for b in result.books]
+        assert [(b["x"], b["y"]) for b in data["books"]] == [(b.x, b.y) for b in result.books]
+        assert [(p["book1"], p["book2"], p["similarity"]) for p in data["similar_pairs"]] == [
+            (p.book1, p.book2, p.similarity) for p in result.similar_pairs
+        ]
+        assert [s["k"] for s in data["k_scores"]] == [s.k for s in result.k_scores]
 
 
 class TestCheckReadingLog:

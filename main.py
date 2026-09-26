@@ -7,6 +7,7 @@ CSVに必要な列は「タイトル」と「説明文」の2つだけ。それ�
 """
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import asdict
@@ -112,6 +113,11 @@ def k_scores_frame(result):
     return pd.DataFrame([asdict(score) for score in result.k_scores])
 
 
+def result_json(result):
+    """MapResult をJSONの文字列にする。日本語はエスケープせず、nan は null にする。"""
+    return json.dumps(result.to_dict(), ensure_ascii=False, indent=2, allow_nan=False)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="読書記録のCSVから読書マップを作る",
@@ -138,6 +144,10 @@ def parse_args():
         help=f"文埋め込みモデル（既定: {EMBEDDING_MODEL}）",
     )
     parser.add_argument("--force-embed", action="store_true", help="埋め込みを作り直す")
+    parser.add_argument(
+        "--json", action="store_true",
+        help="MapResult をJSONで標準出力に出す。PNG・CSVは書き出さない",
+    )
     return parser.parse_args()
 
 
@@ -177,7 +187,8 @@ def main():
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime(RUN_STAMP_FORMAT)
-    logger.info(f"出力ファイル名に付ける実行時刻: {stamp}")
+    if not args.json:
+        logger.info(f"出力ファイル名に付ける実行時刻: {stamp}")
 
     logger.info(f"読み込み: {args.csv}")
     try:
@@ -203,6 +214,13 @@ def main():
     except ValueError as error:
         raise SystemExit(str(error)) from None
     log_clusters(result)
+
+    if args.json:
+        sys.stdout.write(result_json(result) + "\n")
+        logger.info(
+            f"\n完了しました。JSONを標準出力に出しました（類似ペア {len(result.similar_pairs)}組）"
+        )
+        return
 
     logger.info("\n描画と書き出し")
     write_outputs(df, embeddings, result, out_dir, stamp)
