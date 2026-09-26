@@ -1,3 +1,26 @@
+Metadata-Version: 2.4
+Name: reading-map
+Version: 0.1.0
+Summary: 読書記録の説明文から読書マップを作る
+License-Expression: MIT
+Requires-Python: <3.13,>=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: pandas<3,>=2.2.1
+Requires-Dist: numpy<2,>=1.26.4
+Requires-Dist: scikit-learn<2,>=1.5.1
+Requires-Dist: matplotlib<4,>=3.8.3
+Requires-Dist: matplotlib-fontja<2,>=1.0.0
+Requires-Dist: Janome<0.6,>=0.5.0
+Requires-Dist: adjustText<2,>=1.3.0
+Requires-Dist: anthropic<2,>=1.7.0
+Requires-Dist: Brotli>=1.2.0
+Requires-Dist: pydantic<3,>=2.10.1
+Requires-Dist: python-dotenv<2,>=1.0.1
+Provides-Extra: embed
+Requires-Dist: sentence-transformers<5,>=4.1.0; extra == "embed"
+Dynamic: license-file
+
 # My読書マップ
 
 ![読書マップ](docs/reading_map.png)
@@ -10,12 +33,12 @@
 
 ### 環境
 
-Python 3.10〜3.12 が必要です。3.13以降では `pip install` が失敗します。`.python-version` は
-`3.12` です。pyenv と uv はこのディレクトリで3.12に切り替わります。
+Python 3.10〜3.12 が必要です。3.13以降では `pip install` が失敗します。`.python-version` に
+`3.12` を置いているので、pyenv と uv はこのディレクトリで3.12に切り替わります。
 
 ### 実行コマンド
 
-以下のコマンドで、サンプルCSVから読書マップを作ります。初回実行時に文埋め込みモデル
+プログラムの動作確認のために、以下のコマンドを実行します。初回実行時に文埋め込みモデル
 （約500MB）のダウンロードが走ります。
 
 ```bash
@@ -64,9 +87,9 @@ python -m reading_map.name_clusters
 
 ### 出力されるファイル
 
-出力されるもの（`outputs/`）。ファイル名には実行時刻が入ります
-（例: `reading_map_20260921-104300.png`）。同じ出力先に何度実行しても、前回の結果は
-上書きされません。キャッシュの2ファイルだけは時刻が付かず、実行のたびに使い回します。進み具合の表示は標準エラーに出ます。
+出力されるもの（`outputs/`）。ファイル名には実行時刻が入るので、同じ出力先に何度実行しても
+前回の結果は上書きされません（例: `reading_map_20260921-104300.png`）。キャッシュの2ファイル
+だけは時刻が付かず、実行のたびに使い回します。進み具合の表示は標準エラーに出ます。
 
 | ファイル | 中身 |
 | --- | --- |
@@ -199,7 +222,7 @@ result.to_dict()
 ファイルの書き出しは `main.py` が行います（`--json` のときは行いません）。
 
 グループ分けはステップ4までに384次元空間で完了します。ステップ6は、その結果を
-2次元に描画します。
+人が見て分かる形にするための描画です。
 
 ### その他の仕様
 
@@ -241,7 +264,7 @@ result.to_dict()
 
 - **再現性**　t-SNEの乱数は固定しています。同じCSVを同じ設定で実行すれば、座標は前回と
   一致します。説明文や冊数が変わると座標は変わります。クラスタ名は実行のたびに生成AIが
-  作り、同じCSVでも文言は変わります（`--no-ai-names` のときは頻出語から作り、文言は
+  作るので、同じCSVでも文言は変わります（`--no-ai-names` のときは頻出語から作るので
   変わりません）。
 
 ## ライセンス
