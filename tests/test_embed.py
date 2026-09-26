@@ -14,7 +14,8 @@ from reading_map.embed import (
     load_or_build_embeddings,
     load_reading_log,
     meta_path,
-    similar_pairs,
+    prepare_reading_log,
+    similar_pair_positions,
 )
 
 
@@ -56,6 +57,48 @@ class TestLoadReadingLog:
         assert "著者" in load_reading_log(path).columns
 
 
+class TestPrepareReadingLog:
+    def test_returns_copy_without_changing_input(self):
+        """渡した df は変更せず、整えた複製を返す。"""
+        df = pd.DataFrame({"タイトル": ["本1", "本2"], "説明文": [None, "説明2"]})
+        result = prepare_reading_log(df)
+        assert result is not df
+        assert result["説明文"].tolist() == ["", "説明2"]
+        assert df["説明文"].isna().tolist() == [True, False]
+
+    def test_converts_descriptions_to_str(self):
+        """説明文を文字列にする。"""
+        df = pd.DataFrame({"タイトル": ["本1"], "説明文": [123]})
+        assert prepare_reading_log(df)["説明文"].tolist() == ["123"]
+
+    @pytest.mark.parametrize("missing", ["タイトル", "説明文"])
+    def test_raises_when_required_column_missing(self, missing):
+        """必須列が欠けると ValueError。"""
+        row = {"タイトル": ["本1"], "説明文": ["説明1"]}
+        del row[missing]
+        with pytest.raises(ValueError, match=f"^必須列がありません: \\['{missing}'\\]"):
+            prepare_reading_log(pd.DataFrame(row))
+
+    def test_prefixes_source_in_error(self):
+        """source を渡すとメッセージの先頭に付く。"""
+        with pytest.raises(ValueError, match=r"^books\.csv に必須列がありません"):
+            prepare_reading_log(pd.DataFrame({"タイトル": ["本1"]}), source="books.csv")
+
+    def test_warns_empty_descriptions(self, caplog):
+        """空の説明文の件数を warning で出す。"""
+        df = pd.DataFrame({"タイトル": ["本1", "本2", "本3"], "説明文": [None, " ", "説明"]})
+        with caplog.at_level("WARNING", logger="reading_map.embed"):
+            prepare_reading_log(df)
+        assert "説明文が空の行が 2 件あります" in caplog.text
+
+    def test_no_warning_when_all_filled(self, caplog):
+        """空の説明文が無ければ warning は出ない。"""
+        df = pd.DataFrame({"タイトル": ["本1"], "説明文": ["説明"]})
+        with caplog.at_level("WARNING", logger="reading_map.embed"):
+            prepare_reading_log(df)
+        assert caplog.records == []
+
+
 class TestL2Normalize:
     def test_makes_each_row_unit_length(self):
         """各行のノルムが1になる。"""
@@ -78,28 +121,43 @@ class TestL2Normalize:
         assert np.allclose(result, [[0.6, 0.8]])
 
 
-class TestSimilarPairs:
-    def _df(self, n):
-        return pd.DataFrame({"タイトル": [f"本{i}" for i in range(n)]})
-
+class TestSimilarPairPositions:
     def test_excludes_pairs_below_threshold(self):
         """しきい値以下のペアは出ない。"""
         # 直交する3本のベクトル。類似度はすべて0
-        pairs = similar_pairs(self._df(3), np.eye(3), threshold=0.5)
+        pairs = similar_pair_positions(np.eye(3), threshold=0.5)
         assert pairs.empty
-        assert list(pairs.columns) == ["本1", "本2", "類似度"]
+        assert list(pairs.columns) == ["book1", "book2", "similarity"]
 
     def test_sorts_by_similarity_descending(self):
         """類似度の降順に並ぶ。"""
         embeddings = np.array([[1.0, 0.0], [0.99, 0.14], [0.7, 0.71]])
-        pairs = similar_pairs(self._df(3), embeddings, threshold=0.5)
-        assert pairs["類似度"].is_monotonic_decreasing
+        pairs = similar_pair_positions(embeddings, threshold=0.5)
+        assert len(pairs) == 3
+        assert pairs["similarity"].is_monotonic_decreasing
 
     def test_returns_each_pair_once(self):
         """同じペアは一度しか出ない。"""
         embeddings = np.array([[1.0, 0.0], [1.0, 0.0]])
-        pairs = similar_pairs(self._df(2), embeddings, threshold=0.5)
+        pairs = similar_pair_positions(embeddings, threshold=0.5)
         assert len(pairs) == 1
+
+    def test_returns_row_positions(self):
+        """行の位置を小さいほうから返し、類似度は小数3桁に丸める。"""
+        embeddings = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 0.1]])
+        pairs = similar_pair_positions(embeddings, threshold=0.5)
+        assert pairs.to_dict("records") == [
+            {"book1": 0, "book2": 2, "similarity": round(1 / np.hypot(1.0, 0.1), 3)}
+        ]
+
+    def test_uses_default_threshold(self):
+        """しきい値の既定は0.5。"""
+        # 0と1の類似度は0.55、0と2は0.45、1と2は負
+        embeddings = np.array(
+            [[1.0, 0.0], [0.55, np.sqrt(1 - 0.55**2)], [0.45, -np.sqrt(1 - 0.45**2)]]
+        )
+        pairs = similar_pair_positions(embeddings)
+        assert pairs[["book1", "book2"]].values.tolist() == [[0, 1]]
 
 
 class TestCacheMismatch:

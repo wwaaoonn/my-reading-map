@@ -1,5 +1,7 @@
 """KMeansクラスタリングと、クラスタ数kの決定。"""
 
+import logging
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -7,6 +9,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 from .plot_style import setup_japanese_font
+
+logger = logging.getLogger(__name__)
 
 # kを探す上限。冊数が少ないときは自動でさらに小さくなる
 DEFAULT_K_MAX = 14
@@ -51,7 +55,7 @@ def evaluate_k(embeddings, k_max=DEFAULT_K_MAX, random_state=0, verbose=True):
             }
         )
         if verbose:
-            print(
+            logger.info(
                 f"  k={k:2d} : inertia={kmeans.inertia_:9.2f}"
                 f"  silhouette={score:.4f}  最小クラスタ={min_size}冊"
             )
@@ -183,7 +187,7 @@ def plot_k_selection(scores, out_path, chosen_k=None, dpi=200):
     plt.tight_layout()
     plt.savefig(out_path, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    print(f"k選択グラフを保存しました: {out_path}")
+    logger.info(f"k選択グラフを保存しました: {out_path}")
 
 
 def silhouette_for_labels(embeddings, labels, random_state=0):

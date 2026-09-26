@@ -7,35 +7,35 @@ CSVに必要な列は「タイトル」と「説明文」の2つだけ。それ�
 """
 
 import argparse
-import math
+import logging
+import sys
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from reading_map import cluster as cluster_mod
 from reading_map import visualize as viz
-from reading_map.embed import (
-    MIN_BOOKS,
-    MIN_DISTINCT_DESCRIPTIONS,
-    count_distinct_descriptions,
-    load_or_build_embeddings,
-    load_reading_log,
-    similar_pairs,
-)
-from reading_map.label import top_words_per_cluster
-from reading_map.name_clusters import MODEL, generate_cluster_names
+from reading_map.embed import load_or_build_embeddings, load_reading_log
+from reading_map.name_clusters import MODEL, load_env
+from reading_map.pipeline import MapOptions, build_reading_map, check_reading_log
 
+logger = logging.getLogger("reading_map.cli")
+
+# APIキーを書いておくファイル（.gitignore 済み）
+ENV_FILE = Path(__file__).resolve().parent / ".env"
 # 公開用CSVから外す列
 PUBLIC_EXCLUDE_COLUMNS = ["説明文"]
 # 文埋め込みモデル（日本語対応）
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-TSNE_RANDOM_STATE = 42
-KMEANS_RANDOM_STATE = 0
 # Excel系の表計算ソフトが数式として解釈する、セル先頭の文字
 CSV_FORMULA_PREFIXES = ("=", "+", "-", "@")
 # 出力ファイル名に挟む実行時刻。例: reading_map_20260921-104300.png
 RUN_STAMP_FORMAT = "%Y%m%d-%H%M%S"
+# cluster_summary.csv に載せる頻出語の数
+SUMMARY_TOP_WORDS = 10
 
 
 def escape_csv_cell(value):
@@ -67,6 +67,51 @@ def stamped(name, stamp):
     return f"{path.stem}_{stamp}{path.suffix}"
 
 
+def setup_logging():
+    """reading_map のログを標準エラーに出す。他のライブラリは警告以上だけ出す。"""
+    logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
+    logging.getLogger("reading_map").setLevel(logging.INFO)
+
+
+def books_frame(df, result):
+    """入力の df に、クラスタIDと t-SNE の座標の列を足した表。"""
+    books = df.copy()
+    books["クラスタID"] = [book.cluster_id for book in result.books]
+    # t-SNE は float32 で座標を返す。CSVに書く桁をそろえるため float32 に戻す
+    books["tsne_x"] = np.array([book.x for book in result.books], dtype=np.float32)
+    books["tsne_y"] = np.array([book.y for book in result.books], dtype=np.float32)
+    return books
+
+
+def summary_frame(result):
+    """クラスタごとの名前・冊数・代表本・頻出語の表。"""
+    return pd.DataFrame(
+        {
+            "クラスタID": [c.cluster_id for c in result.clusters],
+            "冊数": [c.size for c in result.clusters],
+            "クラスタ名": [c.name for c in result.clusters],
+            "代表本": [result.books[c.representatives[0]].title for c in result.clusters],
+            "頻出語": [" ".join(c.top_words[:SUMMARY_TOP_WORDS]) for c in result.clusters],
+        }
+    )
+
+
+def pairs_frame(result):
+    """類似ペアの表。本は位置ではなくタイトルで示す。"""
+    return pd.DataFrame(
+        {
+            "本1": [result.books[p.book1].title for p in result.similar_pairs],
+            "本2": [result.books[p.book2].title for p in result.similar_pairs],
+            "類似度": [p.similarity for p in result.similar_pairs],
+        }
+    )
+
+
+def k_scores_frame(result):
+    """クラスタ数の検討に使った指標の表。"""
+    return pd.DataFrame([asdict(score) for score in result.k_scores])
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="読書記録のCSVから読書マップを作る",
@@ -96,128 +141,76 @@ def parse_args():
     return parser.parse_args()
 
 
-def decide_k(embeddings, out_dir, requested_k, stamp=None):
-    """使うクラスタ数を決める。指定があればそれに従う。
+def log_clusters(result):
+    """クラスタごとの名前・冊数・中心の本・頻出語を表示する。"""
+    for c in result.clusters:
+        center = result.books[c.representatives[0]].title
+        logger.info(f"  {c.cluster_id}: {c.name}（{c.size}冊 / 中心: {center}）")
+        logger.info(f"     頻出語: {', '.join(c.top_words[:8])}")
 
-    上限は冊数-1。冊数と同じkにすると全クラスタが1冊になり、
-    シルエット係数（2以上・冊数-1以下でのみ定義される）が計算できない。
-    """
-    max_k = len(embeddings) - 1
-    if requested_k is not None:
-        if not 2 <= requested_k <= max_k:
-            raise SystemExit(
-                f"--k は2以上、冊数-1以下で指定してください"
-                f"（指定された k={requested_k} / 冊数={len(embeddings)} / 上限={max_k}）"
-            )
-        print(f"\n[3/6] クラスタ数: 指定された k={requested_k} を使います")
-        return requested_k
 
-    print("\n[3/6] クラスタ数を決めています（kを変えてクラスタリングを試行）")
-    scores = cluster_mod.evaluate_k(embeddings, random_state=KMEANS_RANDOM_STATE)
-    write_csv(scores, out_dir / stamped("k_selection.csv", stamp))
+def write_outputs(df, embeddings, result, out_dir, stamp):
+    """PNGとCSVを書き出す。"""
+    books = books_frame(df, result)
+    cluster_names = {c.cluster_id: c.name for c in result.clusters}
 
-    k, reasons = cluster_mod.suggest_k(scores, len(embeddings))
-    print()
-    for line in reasons:
-        print(f"  {line}")
-    cluster_mod.plot_k_selection(
-        scores, out_dir / stamped("k_selection.png", stamp), chosen_k=k
-    )
-    return k
+    if result.k_scores is not None:
+        scores = k_scores_frame(result)
+        write_csv(scores, out_dir / stamped("k_selection.csv", stamp))
+        cluster_mod.plot_k_selection(
+            scores, out_dir / stamped("k_selection.png", stamp), chosen_k=result.k
+        )
+
+    viz.plot_reading_map(books, cluster_names, out_dir / stamped("reading_map.png", stamp))
+    viz.plot_cluster_maps(books, embeddings, cluster_names, out_dir, stamp=stamp)
+
+    write_csv(books, out_dir / stamped("clustered_books.csv", stamp))
+    public_columns = [c for c in books.columns if c not in PUBLIC_EXCLUDE_COLUMNS]
+    write_csv(books[public_columns], out_dir / stamped("clustered_books_public.csv", stamp))
+    write_csv(summary_frame(result), out_dir / stamped("cluster_summary.csv", stamp))
+    write_csv(pairs_frame(result), out_dir / stamped("similar_pairs.csv", stamp))
 
 
 def main():
     args = parse_args()
+    setup_logging()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime(RUN_STAMP_FORMAT)
-    print(f"出力ファイル名に付ける実行時刻: {stamp}")
+    logger.info(f"出力ファイル名に付ける実行時刻: {stamp}")
 
-    print(f"[1/6] 読み込み: {args.csv}")
-    df = load_reading_log(args.csv)
-    print(f"  {len(df)}冊")
-    if len(df) < MIN_BOOKS:
-        raise SystemExit(
-            f"{len(df)}冊では地図を作れません。{MIN_BOOKS}冊以上のCSVを渡してください。"
-        )
+    logger.info(f"読み込み: {args.csv}")
+    try:
+        df = load_reading_log(args.csv)
+        check_reading_log(df)
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    logger.info(f"  {len(df)}冊")
 
-    distinct = count_distinct_descriptions(df)
-    if distinct < MIN_DISTINCT_DESCRIPTIONS:
-        raise SystemExit(
-            f"内容の異なる説明文が{distinct}件しかありません。"
-            f"{MIN_DISTINCT_DESCRIPTIONS}件以上必要です"
-            "（説明文がすべて空、またはすべて同じでは地図を作れません）。"
-        )
-
-    print("\n[2/6] 説明文をベクトル化")
+    logger.info("\n説明文をベクトル化")
     embeddings = load_or_build_embeddings(
         df, model_name=args.embed_model,
         cache_path=out_dir / "embeddings.npy", force=args.force_embed,
     )
 
-    k = decide_k(embeddings, out_dir, args.k, stamp)
-
-    print(f"\n[4/6] k={k} でクラスタリング")
-    df["クラスタID"] = cluster_mod.fit_kmeans(embeddings, k, KMEANS_RANDOM_STATE)
-    silhouette = cluster_mod.silhouette_for_labels(
-        embeddings, df["クラスタID"].to_numpy(), KMEANS_RANDOM_STATE
+    if not args.no_ai_names:
+        load_env(ENV_FILE)
+    options = MapOptions(
+        k=args.k, perplexity=args.perplexity, ai_names=not args.no_ai_names, model=args.model
     )
-    if math.isnan(silhouette):
-        print(
-            "  シルエット係数（コサイン距離）: 計算できません"
-            "（クラスタが1つ、または全クラスタが1冊）"
-        )
-    else:
-        print(f"  シルエット係数（コサイン距離）: {silhouette:.3f}")
-        if silhouette < cluster_mod.LOW_SILHOUETTE:
-            print(
-                f"  ※ {cluster_mod.LOW_SILHOUETTE}未満。このkでは、クラスタは明確に分離していない"
-            )
+    try:
+        result = build_reading_map(df, embeddings, options)
+    except ValueError as error:
+        raise SystemExit(str(error)) from None
+    log_clusters(result)
 
-    top_words = top_words_per_cluster(df)
-    representatives = viz.representative_books(df, embeddings, top_n=8)
+    logger.info("\n描画と書き出し")
+    write_outputs(df, embeddings, result, out_dir, stamp)
 
-    print("\n[5/6] クラスタ名を生成")
-    if args.no_ai_names:
-        from reading_map.name_clusters import fallback_names
-
-        cluster_names, by_ai = fallback_names(top_words), False
-    else:
-        cluster_names, by_ai = generate_cluster_names(
-            df, representatives, top_words, model=args.model
-        )
-    print(f"  命名: {'生成AI（' + args.model + '）' if by_ai else '頻出語'}")
-    for cluster_id in sorted(cluster_names):
-        count = int((df["クラスタID"] == cluster_id).sum())
-        center = df.iloc[representatives[cluster_id][0]]["タイトル"]
-        print(f"  {cluster_id}: {cluster_names[cluster_id]}（{count}冊 / 中心: {center}）")
-        print(f"     頻出語: {', '.join(top_words[cluster_id][:8])}")
-
-    print("\n[6/6] t-SNEで2次元化して描画")
-    coords = viz.compute_tsne(embeddings, args.perplexity, TSNE_RANDOM_STATE)
-    df["tsne_x"], df["tsne_y"] = coords[:, 0], coords[:, 1]
-
-    viz.plot_reading_map(df, cluster_names, out_dir / stamped("reading_map.png", stamp))
-    viz.plot_cluster_maps(df, embeddings, cluster_names, out_dir, stamp=stamp)
-
-    # 結果の保存
-    write_csv(df, out_dir / stamped("clustered_books.csv", stamp))
-    public_columns = [c for c in df.columns if c not in PUBLIC_EXCLUDE_COLUMNS]
-    write_csv(df[public_columns], out_dir / stamped("clustered_books_public.csv", stamp))
-
-    summary = pd.DataFrame({"クラスタID": sorted(cluster_names)})
-    summary["冊数"] = summary["クラスタID"].map(lambda cid: int((df["クラスタID"] == cid).sum()))
-    summary["クラスタ名"] = summary["クラスタID"].map(cluster_names)
-    summary["代表本"] = summary["クラスタID"].map(
-        lambda cid: df.iloc[representatives[cid][0]]["タイトル"]
+    logger.info(
+        f"\n完了しました。{out_dir}/ に出力しました"
+        f"（{stamp} / 類似ペア {len(result.similar_pairs)}組）"
     )
-    summary["頻出語"] = summary["クラスタID"].map(lambda cid: " ".join(top_words[cid][:10]))
-    write_csv(summary, out_dir / stamped("cluster_summary.csv", stamp))
-
-    pairs = similar_pairs(df, embeddings, threshold=0.5)
-    write_csv(pairs, out_dir / stamped("similar_pairs.csv", stamp))
-
-    print(f"\n完了しました。{out_dir}/ に出力しました（{stamp} / 類似ペア {len(pairs)}組）")
 
 
 if __name__ == "__main__":
