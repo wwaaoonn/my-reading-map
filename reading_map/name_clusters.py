@@ -92,6 +92,21 @@ def check_max_title_chars(max_title_chars):
         )
 
 
+def check_client_options(timeout, max_retries):
+    """タイムアウトと再試行の回数が指定できる範囲にあるか確かめる。範囲外なら ValueError。
+
+    None は指定なし。timeout は0より大きい値、max_retries は0以上。
+    """
+    if timeout is not None and not timeout > 0:
+        raise ValueError(
+            f"timeout は0より大きい値で指定してください（指定された timeout={timeout}）"
+        )
+    if max_retries is not None and not max_retries >= 0:
+        raise ValueError(
+            f"max_retries は0以上で指定してください（指定された max_retries={max_retries}）"
+        )
+
+
 def build_system_prompt(max_title_chars=None):
     """命名の指示文を作る。
 
@@ -138,7 +153,10 @@ def _fall_back(fallback, reason, *messages):
     return fallback, reason
 
 
-def generate_cluster_names(df, representatives, top_words, model=MODEL, max_title_chars=None):
+def generate_cluster_names(
+    df, representatives, top_words, model=MODEL, max_title_chars=None,
+    timeout=None, max_retries=None,
+):
     """Claudeにクラスタ名を作らせる。失敗したら頻出語による名前を返す。
 
     APIキーは環境変数 ANTHROPIC_API_KEY から読む。
@@ -147,9 +165,13 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL, max_titl
     TITLE_MAX_CHARS を超えると ValueError。上限を超えた見出しは切らずに返す。
     頻出語による名前には上限をかけない。
 
+    timeout はAPIの呼び出し1回あたりのタイムアウト（秒）、max_retries は再試行の回数。
+    None ならSDKの既定。timeout が0以下、max_retries が0未満だと ValueError。
+
     戻り値: ({クラスタID: 名前}, 頻出語に切り替えた理由。生成AIで命名できたら None)
     """
     check_max_title_chars(max_title_chars)
+    check_client_options(timeout, max_retries)
     fallback = fallback_names(top_words)
 
     try:
@@ -160,7 +182,13 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL, max_titl
             "anthropic パッケージが無いので、頻出語からクラスタ名を作ります",
         )
 
-    client = anthropic.Anthropic()
+    # 指定のある項目だけ渡す。SDKは timeout=None をタイムアウトなしとして扱う
+    client_options = {}
+    if timeout is not None:
+        client_options["timeout"] = timeout
+    if max_retries is not None:
+        client_options["max_retries"] = max_retries
+    client = anthropic.Anthropic(**client_options)
 
     try:
         response = client.messages.parse(
