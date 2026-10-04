@@ -124,7 +124,8 @@ result.to_dict()
 - 本は、入力した DataFrame の行の位置（0始まり）で指します。
 - ファイルは書き出しません。
 - 入力の誤り（必須列が無い、3冊未満、内容の異なる説明文が2件未満、`df` と `embeddings` の
-  行数が違う、`k` が範囲外、`max_title_chars` が範囲外）は `ValueError` になります。
+  行数が違う、`k`・`max_title_chars`・`timeout`・`max_retries` が範囲外）は `ValueError` に
+  なります。
   `check_reading_log(df)` は冊数と説明文だけを確かめます（`df` は `load_reading_log` で
   読んだもの）。
 - 生成AIの命名は環境変数 `ANTHROPIC_API_KEY` を使います。`.env` の読み込みは CLI
@@ -141,6 +142,8 @@ result.to_dict()
 | `ai_names` | `True` | `False` なら生成AIを呼ばず、頻出語からクラスタ名を作る |
 | `model` | `"claude-opus-5"` | 命名に使うモデル |
 | `max_title_chars` | `None` | 生成AIに指示する見出しの長さの上限（文字数。1以上・40以下）。`None` なら「8〜20文字程度」と指示する |
+| `timeout` | `None` | 生成AIの呼び出し1回あたりのタイムアウト（秒。0より大きい値）。`None` ならSDKの既定 |
+| `max_retries` | `None` | 生成AIの呼び出しの再試行の回数（0以上）。`None` ならSDKの既定 |
 | `pair_threshold` | `0.5` | 類似ペアに含める類似度の下限（この値を超えるペアを含める） |
 | `representatives_per_cluster` | `8` | クラスタごとに返す代表本の数 |
 | `kmeans_random_state` | `0` | KMeansとシルエット係数の乱数のシード |
@@ -240,6 +243,13 @@ result.to_dict()
   上限を超えた見出しは切らずにそのまま返し、該当するクラスタIDを warning でログに
   出します。受け取った見出しは、上限の指定にかかわらず40文字で切ります。頻出語から
   作った名前に上限はかかりません。
+
+- **タイムアウトと再試行**　`MapOptions(timeout=30, max_retries=0)` のように指定すると、
+  その値で Anthropic のクライアントを作ります。`timeout` は呼び出し1回ごとにかかり、
+  再試行のたびに数え直します。指定しない項目は Anthropic のSDKの既定になります
+  （anthropic 1.7.0 では、タイムアウトは600秒（接続は5秒）、再試行は2回）。
+  タイムアウトしたまま再試行を使い切ると、頻出語から名前を作り、
+  `naming_fallback_reason` は `"APIへの接続がタイムアウトした"` になります。
 
 - **t-SNE**　perplexityは冊数から決めます（`min(30, (冊数 - 1) // 3)`、下限5）。
   指定した値も冊数から決めた値も、2以上・`冊数 - 1` 以下に収めて使います。

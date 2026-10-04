@@ -97,7 +97,10 @@ def ai_calls(monkeypatch):
     """生成AIの命名を、呼ばれたら失敗する関数に差し替える。呼び出しの記録を返す。"""
     calls = []
 
-    def fake(df, representatives, top_words, model=None, max_title_chars=None):
+    def fake(
+        df, representatives, top_words, model=None, max_title_chars=None,
+        timeout=None, max_retries=None,
+    ):
         calls.append({"model": model})
         raise AssertionError("generate_cluster_names が呼ばれた")
 
@@ -109,14 +112,21 @@ def ai_calls(monkeypatch):
 def ai_succeeds(monkeypatch):
     """生成AIの命名を、成功する関数に差し替える。
 
-    返した名前と、渡されたモデル・見出しの長さの上限を記録する。
+    返した名前と、渡されたモデル・見出しの長さの上限・タイムアウト・再試行の回数を記録する。
     """
-    record = {"names": None, "models": [], "max_title_chars": []}
+    record = {
+        "names": None, "models": [], "max_title_chars": [], "timeout": [], "max_retries": [],
+    }
 
-    def fake(df, representatives, top_words, model=None, max_title_chars=None):
+    def fake(
+        df, representatives, top_words, model=None, max_title_chars=None,
+        timeout=None, max_retries=None,
+    ):
         record["names"] = fake_names(top_words)
         record["models"].append(model)
         record["max_title_chars"].append(max_title_chars)
+        record["timeout"].append(timeout)
+        record["max_retries"].append(max_retries)
         return record["names"], None
 
     monkeypatch.setattr(GENERATE_CLUSTER_NAMES, fake)
@@ -128,7 +138,10 @@ def ai_fails(monkeypatch):
     """生成AIの命名を、失敗して頻出語の名前を返す関数に差し替える。"""
     record = {"names": None, "reason": "APIキーが設定されていません"}
 
-    def fake(df, representatives, top_words, model=None, max_title_chars=None):
+    def fake(
+        df, representatives, top_words, model=None, max_title_chars=None,
+        timeout=None, max_retries=None,
+    ):
         record["names"] = {
             cluster_id: "・".join(words[:3]) or f"クラスタ{cluster_id}"
             for cluster_id, words in top_words.items()
@@ -307,6 +320,18 @@ class TestBuildReadingMapNaming:
         build_reading_map(df, embeddings, MapOptions(k=3, max_title_chars=12))
         assert ai_succeeds["max_title_chars"] == [12]
 
+    def test_passes_no_timeout_or_max_retries_by_default(self, df, embeddings, ai_succeeds):
+        """options.timeout・options.max_retries を指定しなければ、生成AIの命名に None を渡す。"""
+        build_reading_map(df, embeddings, MapOptions(k=3))
+        assert ai_succeeds["timeout"] == [None]
+        assert ai_succeeds["max_retries"] == [None]
+
+    def test_passes_timeout_and_max_retries_to_ai(self, df, embeddings, ai_succeeds):
+        """options.timeout・options.max_retries を生成AIの命名に渡す。"""
+        build_reading_map(df, embeddings, MapOptions(k=3, timeout=30, max_retries=0))
+        assert ai_succeeds["timeout"] == [30]
+        assert ai_succeeds["max_retries"] == [0]
+
     def test_falls_back_to_top_words_on_failure(self, df, embeddings, ai_fails):
         """生成AIが失敗したら、頻出語の名前と失敗の理由を返す。"""
         result = build_reading_map(df, embeddings, MapOptions(k=3))
@@ -362,6 +387,19 @@ class TestBuildReadingMapInput:
         """1未満、または TITLE_MAX_CHARS を超える max_title_chars は ValueError。"""
         options = MapOptions(k=3, ai_names=ai_names, max_title_chars=value)
         with pytest.raises(ValueError, match="max_title_chars"):
+            build_reading_map(df, embeddings, options)
+        assert ai_calls == []
+
+    @pytest.mark.parametrize(
+        ("field", "value"), [("timeout", 0), ("timeout", -1), ("max_retries", -1)]
+    )
+    @pytest.mark.parametrize("ai_names", [True, False])
+    def test_rejects_client_options_outside_range(
+        self, df, embeddings, ai_calls, field, value, ai_names
+    ):
+        """0以下の timeout、0未満の max_retries は ValueError。"""
+        options = MapOptions(k=3, ai_names=ai_names, **{field: value})
+        with pytest.raises(ValueError, match=field):
             build_reading_map(df, embeddings, options)
         assert ai_calls == []
 

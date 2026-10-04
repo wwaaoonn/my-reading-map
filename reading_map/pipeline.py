@@ -36,6 +36,10 @@ class MapOptions:
     # 生成AIに指示する見出しの長さの上限（文字数。1以上・40以下）。
     # None なら「8〜20文字程度」と指示する
     max_title_chars: int | None = None
+    # 生成AIの呼び出し1回あたりのタイムアウト（秒。0より大きい値）。None ならSDKの既定
+    timeout: float | None = None
+    # 生成AIの呼び出しの再試行の回数（0以上）。None ならSDKの既定
+    max_retries: int | None = None
     # 類似ペアに含める類似度の下限（この値を超えるペアを含める）
     pair_threshold: float = 0.5
     # クラスタごとに返す代表本の数
@@ -183,11 +187,13 @@ def build_reading_map(
 
     冊数が MIN_BOOKS 未満、内容の異なる説明文が MIN_DISTINCT_DESCRIPTIONS 件未満、
     必須列が無い、df と embeddings の行数が違う、options.k が範囲外、
-    options.max_title_chars が範囲外のときは ValueError。
+    options.max_title_chars・options.timeout・options.max_retries が範囲外のときは
+    ValueError。
     """
     if options is None:
         options = MapOptions()
     name_clusters.check_max_title_chars(options.max_title_chars)
+    name_clusters.check_client_options(options.timeout, options.max_retries)
 
     work = prepare_reading_log(df)
     check_reading_log(work)
@@ -228,6 +234,7 @@ def build_reading_map(
         cluster_names, naming_fallback_reason = name_clusters.generate_cluster_names(
             work, representatives, top_words,
             model=options.model, max_title_chars=options.max_title_chars,
+            timeout=options.timeout, max_retries=options.max_retries,
         )
         naming = "ai" if naming_fallback_reason is None else "top_words"
     else:

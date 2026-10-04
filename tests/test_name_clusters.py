@@ -17,6 +17,7 @@ from reading_map.name_clusters import (
     ClusterTitles,
     build_prompt,
     build_system_prompt,
+    check_client_options,
     check_max_title_chars,
     fallback_names,
     generate_cluster_names,
@@ -38,6 +39,8 @@ class FakeMessages:
         self.result = result
         self.error = error
         self.calls = []
+        # anthropic.Anthropic に渡された引数（fake_client が記録する）
+        self.client_options = []
 
     def parse(self, **kwargs):
         self.calls.append(kwargs)
@@ -82,6 +85,7 @@ def fake_client(monkeypatch):
 
     class FakeAnthropic:
         def __init__(self, *args, **kwargs):
+            messages.client_options.append(kwargs)
             self.messages = messages
             self.base_url = "https://api.anthropic.com"
 
@@ -186,6 +190,26 @@ class TestCheckMaxTitleChars:
             check_max_title_chars(value)
 
 
+class TestCheckClientOptions:
+    @pytest.mark.parametrize(
+        ("timeout", "max_retries"), [(None, None), (0.5, 0), (30, 3), (None, 0), (30, None)]
+    )
+    def test_accepts_values_in_range(self, timeout, max_retries):
+        """None と、0より大きい timeout、0以上の max_retries は通す。"""
+        check_client_options(timeout, max_retries)
+
+    @pytest.mark.parametrize("value", [0, -1, float("nan")])
+    def test_rejects_timeout_outside_range(self, value):
+        """0以下の timeout は ValueError。"""
+        with pytest.raises(ValueError, match="timeout"):
+            check_client_options(value, None)
+
+    def test_rejects_max_retries_outside_range(self):
+        """0未満の max_retries は ValueError。"""
+        with pytest.raises(ValueError, match="max_retries"):
+            check_client_options(None, -1)
+
+
 class TestOneLine:
     def test_collapses_whitespace(self):
         """改行と連続する空白を1つの空白にまとめる。"""
@@ -255,6 +279,17 @@ class TestGenerateClusterNamesFallback:
             _, reason = generate_cluster_names(df, representatives, top_words)
         assert reason == expected
         assert "頻出語からクラスタ名を作ります" in caplog.text
+
+    def test_falls_back_on_timeout_with_timeout_given(
+        self, fake_client, df, representatives, top_words
+    ):
+        """timeout と max_retries を指定してタイムアウトしても、頻出語に戻して理由を返す。"""
+        fake_client.error = anthropic.APITimeoutError(request=REQUEST)
+        names, reason = generate_cluster_names(
+            df, representatives, top_words, timeout=1, max_retries=0
+        )
+        assert reason == "APIへの接続がタイムアウトした"
+        assert names == fallback_names(top_words)
 
     def test_reraises_unrelated_type_error(self, fake_client, df, representatives, top_words):
         """認証以外の TypeError は投げ直す。"""
@@ -411,4 +446,39 @@ class TestGenerateClusterNamesSuccess:
         """範囲外の上限は ValueError。APIは呼ばない。"""
         with pytest.raises(ValueError):
             generate_cluster_names(df, representatives, top_words, max_title_chars=value)
+        assert fake_client.calls == []
+
+    def test_creates_client_without_options_by_default(
+        self, fake_client, df, representatives, top_words
+    ):
+        """timeout と max_retries の指定が無ければ、クライアントに渡さない。"""
+        fake_client.result = FakeResponse([(0, "見出し")])
+        generate_cluster_names(df, representatives, top_words)
+        assert fake_client.client_options == [{}]
+
+    def test_creates_client_with_timeout_and_max_retries(
+        self, fake_client, df, representatives, top_words
+    ):
+        """指定した timeout と max_retries でクライアントを作る。"""
+        fake_client.result = FakeResponse([(0, "見出し")])
+        generate_cluster_names(df, representatives, top_words, timeout=30, max_retries=5)
+        assert fake_client.client_options == [{"timeout": 30, "max_retries": 5}]
+
+    @pytest.mark.parametrize("options", [{"timeout": 0.5}, {"max_retries": 0}])
+    def test_passes_only_given_client_options(
+        self, fake_client, df, representatives, top_words, options
+    ):
+        """片方だけ指定したら、その項目だけをクライアントに渡す。max_retries=0 も渡す。"""
+        fake_client.result = FakeResponse([(0, "見出し")])
+        generate_cluster_names(df, representatives, top_words, **options)
+        assert fake_client.client_options == [options]
+
+    @pytest.mark.parametrize("options", [{"timeout": 0}, {"max_retries": -1}])
+    def test_rejects_client_options_outside_range(
+        self, fake_client, df, representatives, top_words, options
+    ):
+        """範囲外の timeout・max_retries は ValueError。クライアントは作らない。"""
+        with pytest.raises(ValueError):
+            generate_cluster_names(df, representatives, top_words, **options)
+        assert fake_client.client_options == []
         assert fake_client.calls == []
