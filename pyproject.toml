@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "reading-map"
-version = "0.1.0"
+version = "0.2.0"
 description = "読書記録の説明文から読書マップを作る"
 readme = "README.md"
 license = "MIT"

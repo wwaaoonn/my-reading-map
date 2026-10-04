@@ -94,13 +94,13 @@ python main.py data/sample_reading_log_1.csv --json > result.json
 配布物に含まれるのは `reading_map/` だけです（`main.py`・`tests/`・`data/` は含みません）。
 
 ```bash
-pip install "git+https://github.com/wwaaoonn/my-reading-map@v0.1.0"
+pip install "git+https://github.com/wwaaoonn/my-reading-map@v0.2.0"
 ```
 
 説明文のベクトル化（sentence-transformers）も使う場合は、extras の `embed` を付けます。
 
 ```bash
-pip install "reading-map[embed] @ git+https://github.com/wwaaoonn/my-reading-map@v0.1.0"
+pip install "reading-map[embed] @ git+https://github.com/wwaaoonn/my-reading-map@v0.2.0"
 ```
 
 読み込み・ベクトル化・計算の順に呼びます。
@@ -261,6 +261,27 @@ result.to_dict()
   一致します。説明文や冊数が変わると座標は変わります。クラスタ名は実行のたびに生成AIが
   作り、同じCSVでも文言は変わります（`--no-ai-names` のときは頻出語から作り、文言は
   変わりません）。
+
+## 更新履歴
+
+`reading_map` パッケージのバージョンごとの変更です。バージョン名は Git のタグと同じです。
+
+### v0.2.0（2026-10-04）
+
+- `MapOptions` と `generate_cluster_names` に `max_title_chars` を追加しました。生成AIに
+  指示する見出しの長さの上限（文字数）を指定できます
+  （[#22](https://github.com/wwaaoonn/my-reading-map/issues/22)）。
+- `MapOptions` と `generate_cluster_names` に `timeout` と `max_retries` を追加しました。
+  生成AIの呼び出しのタイムアウト（秒）と再試行の回数を指定できます
+  （[#23](https://github.com/wwaaoonn/my-reading-map/issues/23)）。
+- `MapOptions` の `max_title_chars`・`timeout`・`max_retries` は、`model` と
+  `pair_threshold` の間にあります。`pair_threshold` 以降の項目は、位置引数での順番が
+  v0.1.0 と異なります。
+
+### v0.1.0（2026-09-26）
+
+- `reading_map` をパッケージとしてインストールできる最初のバージョンです。
+  `build_reading_map`・`MapOptions`・`MapResult` を提供します。
 
 ## ライセンス
 
