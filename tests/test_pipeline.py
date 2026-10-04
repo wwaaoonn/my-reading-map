@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from reading_map.embed import MIN_BOOKS
+from reading_map.name_clusters import TITLE_MAX_CHARS
 from reading_map.pipeline import (
     Book,
     Cluster,
@@ -96,7 +97,7 @@ def ai_calls(monkeypatch):
     """生成AIの命名を、呼ばれたら失敗する関数に差し替える。呼び出しの記録を返す。"""
     calls = []
 
-    def fake(df, representatives, top_words, model=None):
+    def fake(df, representatives, top_words, model=None, max_title_chars=None):
         calls.append({"model": model})
         raise AssertionError("generate_cluster_names が呼ばれた")
 
@@ -106,12 +107,16 @@ def ai_calls(monkeypatch):
 
 @pytest.fixture
 def ai_succeeds(monkeypatch):
-    """生成AIの命名を、成功する関数に差し替える。返した名前と渡されたモデルを記録する。"""
-    record = {"names": None, "models": []}
+    """生成AIの命名を、成功する関数に差し替える。
 
-    def fake(df, representatives, top_words, model=None):
+    返した名前と、渡されたモデル・見出しの長さの上限を記録する。
+    """
+    record = {"names": None, "models": [], "max_title_chars": []}
+
+    def fake(df, representatives, top_words, model=None, max_title_chars=None):
         record["names"] = fake_names(top_words)
         record["models"].append(model)
+        record["max_title_chars"].append(max_title_chars)
         return record["names"], None
 
     monkeypatch.setattr(GENERATE_CLUSTER_NAMES, fake)
@@ -123,7 +128,7 @@ def ai_fails(monkeypatch):
     """生成AIの命名を、失敗して頻出語の名前を返す関数に差し替える。"""
     record = {"names": None, "reason": "APIキーが設定されていません"}
 
-    def fake(df, representatives, top_words, model=None):
+    def fake(df, representatives, top_words, model=None, max_title_chars=None):
         record["names"] = {
             cluster_id: "・".join(words[:3]) or f"クラスタ{cluster_id}"
             for cluster_id, words in top_words.items()
@@ -292,6 +297,16 @@ class TestBuildReadingMapNaming:
         build_reading_map(df, embeddings, MapOptions(k=3, model="claude-sonnet-5"))
         assert ai_succeeds["models"] == ["claude-sonnet-5"]
 
+    def test_passes_no_max_title_chars_by_default(self, df, embeddings, ai_succeeds):
+        """options.max_title_chars を指定しなければ、生成AIの命名に None を渡す。"""
+        build_reading_map(df, embeddings, MapOptions(k=3))
+        assert ai_succeeds["max_title_chars"] == [None]
+
+    def test_passes_max_title_chars_to_ai(self, df, embeddings, ai_succeeds):
+        """options.max_title_chars を生成AIの命名に渡す。"""
+        build_reading_map(df, embeddings, MapOptions(k=3, max_title_chars=12))
+        assert ai_succeeds["max_title_chars"] == [12]
+
     def test_falls_back_to_top_words_on_failure(self, df, embeddings, ai_fails):
         """生成AIが失敗したら、頻出語の名前と失敗の理由を返す。"""
         result = build_reading_map(df, embeddings, MapOptions(k=3))
@@ -340,6 +355,15 @@ class TestBuildReadingMapInput:
         """必須列が無ければ ValueError。"""
         with pytest.raises(ValueError):
             build_reading_map(df.drop(columns=column), embeddings, MapOptions(ai_names=False))
+
+    @pytest.mark.parametrize("value", [0, TITLE_MAX_CHARS + 1])
+    @pytest.mark.parametrize("ai_names", [True, False])
+    def test_rejects_max_title_chars_outside_range(self, df, embeddings, ai_calls, value, ai_names):
+        """1未満、または TITLE_MAX_CHARS を超える max_title_chars は ValueError。"""
+        options = MapOptions(k=3, ai_names=ai_names, max_title_chars=value)
+        with pytest.raises(ValueError, match="max_title_chars"):
+            build_reading_map(df, embeddings, options)
+        assert ai_calls == []
 
     def test_rejects_mismatched_embeddings(self, df, embeddings, ai_calls):
         """embeddings の行数が df と違えば ValueError。"""
