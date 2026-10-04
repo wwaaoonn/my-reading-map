@@ -10,11 +10,14 @@ import pytest
 
 from reading_map.name_clusters import (
     BOOKS_PER_CLUSTER,
+    DEFAULT_LENGTH_RULE,
     DESCRIPTION_CHARS,
     TITLE_MAX_CHARS,
     ClusterTitle,
     ClusterTitles,
     build_prompt,
+    build_system_prompt,
+    check_max_title_chars,
     fallback_names,
     generate_cluster_names,
     load_env,
@@ -149,6 +152,38 @@ class TestBuildPrompt:
         df = pd.DataFrame({"クラスタID": [0], "タイトル": ["本\nA"], "説明文": ["説明"]})
         prompt = build_prompt(df, {0: [0]}, {0: ["語"]})
         assert "『本 A』" in prompt
+
+
+class TestBuildSystemPrompt:
+    def test_uses_default_length_rule(self):
+        """指定が無ければ、長さの条件は既定のまま。"""
+        assert f"- {DEFAULT_LENGTH_RULE}。体言止め" in build_system_prompt()
+
+    def test_uses_requested_max_chars(self):
+        """指定があれば、長さの条件は「N文字以内」になる。"""
+        prompt = build_system_prompt(12)
+        assert "- 12文字以内。体言止め" in prompt
+        assert DEFAULT_LENGTH_RULE not in prompt
+
+    def test_changes_only_length_rule(self):
+        """長さの条件以外の行は、指定があっても変わらない。"""
+        default_lines = build_system_prompt().splitlines()
+        lines = build_system_prompt(12).splitlines()
+        changed = [(a, b) for a, b in zip(default_lines, lines, strict=True) if a != b]
+        assert changed == [(f"- {DEFAULT_LENGTH_RULE}。体言止め", "- 12文字以内。体言止め")]
+
+
+class TestCheckMaxTitleChars:
+    @pytest.mark.parametrize("value", [None, 1, 12, TITLE_MAX_CHARS])
+    def test_accepts_values_in_range(self, value):
+        """None と、1以上・TITLE_MAX_CHARS 以下は通す。"""
+        check_max_title_chars(value)
+
+    @pytest.mark.parametrize("value", [-1, 0, TITLE_MAX_CHARS + 1])
+    def test_rejects_values_outside_range(self, value):
+        """1未満、または TITLE_MAX_CHARS を超える値は ValueError。"""
+        with pytest.raises(ValueError, match="max_title_chars"):
+            check_max_title_chars(value)
 
 
 class TestOneLine:
@@ -313,3 +348,67 @@ class TestGenerateClusterNamesSuccess:
         fake_client.result = FakeResponse([(0, "見出し")])
         generate_cluster_names(df, representatives, top_words)
         assert fake_client.calls[0]["output_format"] is ClusterTitles
+
+    def test_sends_default_length_rule(self, fake_client, df, representatives, top_words):
+        """上限の指定が無ければ、既定の長さの条件を指示文に入れる。"""
+        fake_client.result = FakeResponse([(0, "見出し")])
+        generate_cluster_names(df, representatives, top_words)
+        assert fake_client.calls[0]["system"] == build_system_prompt()
+
+    def test_sends_requested_max_chars(self, fake_client, df, representatives, top_words):
+        """上限を指定すると、指示文の長さの条件が「N文字以内」になる。"""
+        fake_client.result = FakeResponse([(0, "見出し")])
+        generate_cluster_names(df, representatives, top_words, max_title_chars=12)
+        assert "12文字以内" in fake_client.calls[0]["system"]
+
+    def test_keeps_title_over_max_chars(self, fake_client, df, representatives, top_words):
+        """上限を超えた見出しは切らずに返す。"""
+        fake_client.result = FakeResponse([(0, "見" * 13), (1, "宇宙への旅")])
+        names, reason = generate_cluster_names(df, representatives, top_words, max_title_chars=12)
+        assert reason is None
+        assert names == {0: "見" * 13, 1: "宇宙への旅"}
+
+    def test_warns_about_title_over_max_chars(
+        self, fake_client, caplog, df, representatives, top_words
+    ):
+        """上限を超えた見出しのクラスタIDを warning で出す。"""
+        fake_client.result = FakeResponse([(0, "見" * 13), (1, "見" * 12)])
+        with caplog.at_level("WARNING", logger="reading_map.name_clusters"):
+            generate_cluster_names(df, representatives, top_words, max_title_chars=12)
+        assert "12文字を超える見出しが返りました（切らずに使います）: [0]" in caplog.text
+
+    def test_does_not_warn_within_max_chars(
+        self, fake_client, caplog, df, representatives, top_words
+    ):
+        """上限以内の見出しだけなら warning を出さない。"""
+        fake_client.result = FakeResponse([(0, "見" * 12), (1, "宇宙への旅")])
+        with caplog.at_level("WARNING", logger="reading_map.name_clusters"):
+            generate_cluster_names(df, representatives, top_words, max_title_chars=12)
+        assert caplog.text == ""
+
+    def test_truncates_at_title_max_chars_with_max_chars(
+        self, fake_client, df, representatives, top_words
+    ):
+        """上限を指定しても、TITLE_MAX_CHARS を超える見出しは TITLE_MAX_CHARS で切る。"""
+        fake_client.result = FakeResponse([(0, "見" * 200)])
+        names, _ = generate_cluster_names(df, representatives, top_words, max_title_chars=12)
+        assert names[0] == "見" * TITLE_MAX_CHARS
+
+    def test_does_not_limit_fallback_names(
+        self, fake_client, caplog, df, representatives, top_words
+    ):
+        """頻出語で補った名前には上限をかけず、warning の対象にもしない。"""
+        fake_client.result = FakeResponse([(0, "猫")])
+        with caplog.at_level("WARNING", logger="reading_map.name_clusters"):
+            names, _ = generate_cluster_names(df, representatives, top_words, max_title_chars=1)
+        assert names[1] == fallback_names(top_words)[1]
+        assert "文字を超える見出し" not in caplog.text
+
+    @pytest.mark.parametrize("value", [0, TITLE_MAX_CHARS + 1])
+    def test_rejects_max_chars_outside_range(
+        self, fake_client, df, representatives, top_words, value
+    ):
+        """範囲外の上限は ValueError。APIは呼ばない。"""
+        with pytest.raises(ValueError):
+            generate_cluster_names(df, representatives, top_words, max_title_chars=value)
+        assert fake_client.calls == []

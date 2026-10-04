@@ -124,8 +124,9 @@ result.to_dict()
 - 本は、入力した DataFrame の行の位置（0始まり）で指します。
 - ファイルは書き出しません。
 - 入力の誤り（必須列が無い、3冊未満、内容の異なる説明文が2件未満、`df` と `embeddings` の
-  行数が違う、`k` が範囲外）は `ValueError` になります。`check_reading_log(df)` は
-  冊数と説明文だけを確かめます（`df` は `load_reading_log` で読んだもの）。
+  行数が違う、`k` が範囲外、`max_title_chars` が範囲外）は `ValueError` になります。
+  `check_reading_log(df)` は冊数と説明文だけを確かめます（`df` は `load_reading_log` で
+  読んだもの）。
 - 生成AIの命名は環境変数 `ANTHROPIC_API_KEY` を使います。`.env` の読み込みは CLI
   （`main.py` と `python -m reading_map.name_clusters`）だけが行います。
 - ログは `logging` のロガー `reading_map` に出ます。
@@ -139,6 +140,7 @@ result.to_dict()
 | `perplexity` | `None` | t-SNEのperplexity。`None` なら冊数から決める |
 | `ai_names` | `True` | `False` なら生成AIを呼ばず、頻出語からクラスタ名を作る |
 | `model` | `"claude-opus-5"` | 命名に使うモデル |
+| `max_title_chars` | `None` | 生成AIに指示する見出しの長さの上限（文字数。1以上・40以下）。`None` なら「8〜20文字程度」と指示する |
 | `pair_threshold` | `0.5` | 類似ペアに含める類似度の下限（この値を超えるペアを含める） |
 | `representatives_per_cluster` | `8` | クラスタごとに返す代表本の数 |
 | `kmeans_random_state` | `0` | KMeansとシルエット係数の乱数のシード |
@@ -232,6 +234,12 @@ result.to_dict()
 - **APIに送るデータ**　クラスタごとに、重心に近い順で最大8冊分のタイトルと説明文
   （先頭300文字）・頻出語・冊数を送ります。返り値はPydanticのモデルで構造化出力として
   受け取ります。`--no-ai-names`（`MapOptions(ai_names=False)`）のときは送りません。
+
+- **見出しの長さ**　指示文の長さの条件は「8〜20文字程度」です。
+  `MapOptions(max_title_chars=12)` のように上限を指定すると「12文字以内」になります。
+  上限を超えた見出しは切らずにそのまま返し、該当するクラスタIDを warning でログに
+  出します。受け取った見出しは、上限の指定にかかわらず40文字で切ります。頻出語から
+  作った名前に上限はかかりません。
 
 - **t-SNE**　perplexityは冊数から決めます（`min(30, (冊数 - 1) // 3)`、下限5）。
   指定した値も冊数から決めた値も、2以上・`冊数 - 1` 以下に収めて使います。

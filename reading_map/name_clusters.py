@@ -23,14 +23,16 @@ BOOKS_PER_CLUSTER = 8
 DESCRIPTION_CHARS = 300
 # 受け取った見出しを切る長さ
 TITLE_MAX_CHARS = 40
+# 見出しの長さの上限を指定しないときの、指示文の長さの条件
+DEFAULT_LENGTH_RULE = "8〜20文字程度"
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT_TEMPLATE = """\
 あなたは読書傾向を分析して、本のグループに見出しを付ける編集者です。
 
 渡された各グループについて、そのグループに共通する内容やテーマを表す短い日本語の
 見出しを作ってください。条件は次のとおりです。
 
-- 8〜20文字程度。体言止め
+- {length_rule}。体言止め
 - 説明文から読み取れる中身に即した見出しにする。ジャンル名の言い換え
   （「小説」「エッセイ」など）だけで済ませない
 - グループ同士で似た見出しにならないよう、違いが分かる言葉を選ぶ
@@ -76,6 +78,33 @@ def fallback_names(top_words):
     }
 
 
+def check_max_title_chars(max_title_chars):
+    """見出しの長さの上限が指定できる範囲にあるか確かめる。範囲外なら ValueError。
+
+    None は指定なし。
+    """
+    if max_title_chars is None:
+        return
+    if not 1 <= max_title_chars <= TITLE_MAX_CHARS:
+        raise ValueError(
+            f"max_title_chars は1以上、{TITLE_MAX_CHARS}以下で指定してください"
+            f"（指定された max_title_chars={max_title_chars}）"
+        )
+
+
+def build_system_prompt(max_title_chars=None):
+    """命名の指示文を作る。
+
+    長さの条件は、max_title_chars が None なら「8〜20文字程度」、
+    指定があれば「{max_title_chars}文字以内」。
+    """
+    if max_title_chars is None:
+        length_rule = DEFAULT_LENGTH_RULE
+    else:
+        length_rule = f"{max_title_chars}文字以内"
+    return SYSTEM_PROMPT_TEMPLATE.format(length_rule=length_rule)
+
+
 def build_prompt(df, representatives, top_words):
     """クラスタごとに、中心に近い本の情報を並べたプロンプトを作る。"""
     blocks = []
@@ -109,13 +138,18 @@ def _fall_back(fallback, reason, *messages):
     return fallback, reason
 
 
-def generate_cluster_names(df, representatives, top_words, model=MODEL):
+def generate_cluster_names(df, representatives, top_words, model=MODEL, max_title_chars=None):
     """Claudeにクラスタ名を作らせる。失敗したら頻出語による名前を返す。
 
     APIキーは環境変数 ANTHROPIC_API_KEY から読む。
 
+    max_title_chars は指示文に入れる見出しの長さの上限（文字数）。1未満、または
+    TITLE_MAX_CHARS を超えると ValueError。上限を超えた見出しは切らずに返す。
+    頻出語による名前には上限をかけない。
+
     戻り値: ({クラスタID: 名前}, 頻出語に切り替えた理由。生成AIで命名できたら None)
     """
+    check_max_title_chars(max_title_chars)
     fallback = fallback_names(top_words)
 
     try:
@@ -132,7 +166,7 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
         response = client.messages.parse(
             model=model,
             max_tokens=16000,
-            system=SYSTEM_PROMPT,
+            system=build_system_prompt(max_title_chars),
             messages=[{"role": "user", "content": build_prompt(df, representatives, top_words)}],
             output_format=ClusterTitles,
         )
@@ -198,6 +232,16 @@ def generate_cluster_names(df, representatives, top_words, model=MODEL):
     missing = [cid for cid in fallback if names[cid] == fallback[cid]]
     if missing:
         logger.warning(f"一部のクラスタ名が生成されなかったので頻出語で補いました: {missing}")
+
+    if max_title_chars is not None:
+        too_long = [
+            cid for cid in fallback
+            if cid not in missing and len(names[cid]) > max_title_chars
+        ]
+        if too_long:
+            logger.warning(
+                f"{max_title_chars}文字を超える見出しが返りました（切らずに使います）: {too_long}"
+            )
 
     return names, None
 
